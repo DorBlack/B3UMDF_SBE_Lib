@@ -7,3 +7,9 @@
 [submodule "submodules/asio"]
 	path = submodules/asio
 	url = git@github.com:chriskohlhoff/asio.git
+[submodule "https://github.com/google/googletest.git"]
+	url = submodules/googletest
+[submodule "https://github.com/google/benchmark.git"]
+	url = submodules/benchmark
+[submodule "https://github.com/chriskohlhoff/asio.git"]
+	url = submodules/asio
