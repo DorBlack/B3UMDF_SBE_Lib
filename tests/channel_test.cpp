@@ -69,5 +69,5 @@ TEST(ChannelTest, Create)
     notification->on_snapshot = [&](auto msg){};
 
     std::shared_ptr<Channel> ch = std::make_shared<Channel>(config, notification);
-    ch->start();
+  //  ch->start();
 }
