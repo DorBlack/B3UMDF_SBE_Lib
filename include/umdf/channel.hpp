@@ -70,7 +70,7 @@ namespace b3::umdf
         void start()
         {
             create_sockets();
-            create_engine();
+           // create_engine();
 
             _th_instrument_def = std::make_shared<std::thread>(([&](){
                 _sock_instrument_def->start();

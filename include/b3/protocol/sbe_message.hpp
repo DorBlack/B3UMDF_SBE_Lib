@@ -27,10 +27,15 @@
 #define B3MKTDATA_SBE_MESSAGE_HPP
 #include <memory>
 #include <variant>
+#include <vector>
 
 #include "b3_umdf_mbo_sbe/MessageHeader.h"
 #include "b3_umdf_mbo_sbe/Order_MBO_50.h"
 #include "b3_umdf_mbo_sbe/DeleteOrder_MBO_51.h"
+#include "b3_umdf_mbo_sbe/SequenceReset_1.h"
+#include "b3_umdf_mbo_sbe/Sequence_2.h"
+#include "b3_umdf_mbo_sbe/SnapshotFullRefresh_Header_30.h"
+#include "b3_umdf_mbo_sbe/SecurityDefinition_4.h"
 
 using namespace b3::umdf::mbo::sbe;
 
@@ -79,53 +84,101 @@ namespace b3::protocol::sbe
         const std::size_t _size;
     };
 
+    struct sbe_message {
+        std::unique_ptr<MessageHeader> header;
+        std::variant<Order_MBO_50,
+                     DeleteOrder_MBO_51,
+                     SequenceReset_1,
+                     SnapshotFullRefresh_Header_30,
+                     SecurityDefinition_4> body;
+    };
+
     template<typename Buffer>
     struct message
     {
-        std::unique_ptr<b3_header> b3header;
-        std::unique_ptr<MessageHeader> header;
-        std::variant<Order_MBO_50,
-                            DeleteOrder_MBO_51> body;
 
         template<typename Ty>
-        static std::shared_ptr<message> create_message(std::shared_ptr<Ty> buffer, std::size_t offset)
+        static std::shared_ptr<message> create_message(std::shared_ptr<Ty> buffer)
         {
-            return std::make_shared<message>(buffer, offset);
+            return std::make_shared<message>(buffer);
         }
 
-        message(std::shared_ptr<Buffer> buffer, std::size_t offset) : _buffer(buffer) {
-            auto current_offset = offset;
-            b3header = std::make_unique<b3_header>(buffer->data(), current_offset, buffer->size());
-            current_offset += b3_header::encoded_lenght();
-            header = std::make_unique<MessageHeader>();
-            header->wrap(buffer->data(), current_offset, 0, buffer->size());
-            current_offset += header->encodedLength();
-            decoder_body(buffer, current_offset);
+        message(std::shared_ptr<Buffer> buffer) : _buffer(buffer) {
+            build_msg();
         }
+
+        std::unique_ptr<b3_header> b3header;
+        std::vector<std::shared_ptr<sbe_message>> body;
 
     private:
 
-        void decoder_body(std::shared_ptr<Buffer> buffer, std::size_t offset)
+        void build_msg()
         {
-            auto template_id = header->templateId();
+            b3header = std::make_unique<b3_header>(_buffer->data(), 0, _buffer->size());
+            std::size_t current_offset = b3_header::encoded_lenght();
+
+            while(current_offset < _buffer->size())
+            {
+                 auto msg = decoder_body(_buffer, current_offset);
+                 body.emplace_back(msg);
+            }
+        }
+
+        std::shared_ptr<sbe_message> decoder_body(std::shared_ptr<Buffer> buffer, std::size_t& offset)
+        {
+            auto sbe_msg = std::make_shared<sbe_message>();
+
+            sbe_msg->header = std::make_unique<MessageHeader>();
+            sbe_msg->header->wrap(buffer->data(), offset, 0, buffer->size());
+            offset += sbe_msg->header->encodedLength();
+
+            auto template_id = sbe_msg->header->templateId();
             switch (template_id) {
             case Order_MBO_50::SBE_TEMPLATE_ID: {
-                body = Order_MBO_50();
-                auto ptr = std::get_if<Order_MBO_50>(&body);
-                ptr->wrapForDecode(buffer->data(), offset, header->blockLength(),
-                        header->actingVersion(), buffer->size());
+                sbe_msg->body = Order_MBO_50();
+                auto ptr = std::get_if<Order_MBO_50>(&sbe_msg->body);
+                ptr->wrapForDecode(buffer->data(), offset, sbe_msg->header->blockLength(),
+                        sbe_msg->header->actingVersion(), buffer->size());
+                offset += ptr->decodeLength();
                 break;
             }
             case DeleteOrder_MBO_51::SBE_TEMPLATE_ID: {
-                body = DeleteOrder_MBO_51();
-                auto ptr = std::get_if<DeleteOrder_MBO_51>(&body);
-                ptr->wrapForDecode(buffer->data(), offset, header->blockLength(),
-                        header->actingVersion(), buffer->size());
+                sbe_msg->body = DeleteOrder_MBO_51();
+                auto ptr = std::get_if<DeleteOrder_MBO_51>(&sbe_msg->body);
+                ptr->wrapForDecode(buffer->data(), offset, sbe_msg->header->blockLength(),
+                        sbe_msg->header->actingVersion(), buffer->size());
+                offset += ptr->decodeLength();
+                break;
+            }
+            case SequenceReset_1::SBE_TEMPLATE_ID: {
+                sbe_msg->body = SequenceReset_1();
+                auto ptr = std::get_if<SequenceReset_1>(&sbe_msg->body);
+                ptr->wrapForDecode(buffer->data(), offset, sbe_msg->header->blockLength(),
+                        sbe_msg->header->actingVersion(), buffer->size());
+                offset += ptr->decodeLength();
+                break;
+            }
+            case SnapshotFullRefresh_Header_30::SBE_TEMPLATE_ID: {
+                sbe_msg->body = SnapshotFullRefresh_Header_30();
+                auto ptr = std::get_if<SnapshotFullRefresh_Header_30>(&sbe_msg->body);
+                ptr->wrapForDecode(buffer->data(), offset, sbe_msg->header->blockLength(),
+                        sbe_msg->header->actingVersion(), buffer->size());
+                offset += ptr->decodeLength();
+                break;
+            }
+            case SecurityDefinition_4::SBE_TEMPLATE_ID: {
+                sbe_msg->body = SecurityDefinition_4();
+                auto ptr = std::get_if<SecurityDefinition_4>(&sbe_msg->body);
+                ptr->wrapForDecode(buffer->data(), offset, sbe_msg->header->blockLength(),
+                        sbe_msg->header->actingVersion(), buffer->size());
+                offset += ptr->decodeLength();
                 break;
             }
             default: break;
             }
+            return sbe_msg;
         }
+
         std::shared_ptr<Buffer> _buffer;
     };
 }

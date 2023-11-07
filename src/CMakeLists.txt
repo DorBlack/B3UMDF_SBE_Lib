@@ -13,7 +13,7 @@ target_link_libraries(asio INTERFACE Threads::Threads)
 add_library(b3_umdf)
 target_sources(b3_umdf PRIVATE umdf/impl_channel.cpp)
 target_include_directories(b3_umdf PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../include)
-target_link_libraries(b3_umdf PRIVATE asio Threads::Threads)
+target_link_libraries(b3_umdf PRIVATE pcap asio Threads::Threads)
 target_compile_features(b3_umdf PUBLIC cxx_std_20)
 
 # add_library(${LIB_NAME} SHARED
