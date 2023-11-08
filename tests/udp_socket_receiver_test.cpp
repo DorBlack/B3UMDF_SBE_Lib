@@ -126,14 +126,14 @@ protected:
         MessageHeader header;
 
         // Criando o encoder da HEADER
-        header.wrap(_buffer->data(), b3_header::encoded_lenght(), 0, _buffer->capacity())
+        header.wrap(_buffer->data(), b3_header::encoded_lenght() + framing_header::encoded_length(), 0, _buffer->capacity())
                 .blockLength(Order_MBO_50::sbeBlockLength())
                 .templateId(Order_MBO_50::sbeTemplateId())
                 .schemaId(Order_MBO_50::sbeSchemaId())
                 .version(Order_MBO_50::sbeSchemaVersion());
 
         // Fazendo o encoder do BODY
-        encode.wrapForEncode(_buffer->data(), header.encodedLength() + b3_header::encoded_lenght(), _buffer->capacity());
+        encode.wrapForEncode(_buffer->data(), header.encodedLength() + b3_header::encoded_lenght() + framing_header::encoded_length(), _buffer->capacity());
         encode.securityID(default_values.securityId);
         encode.matchEventIndicator().clear();
         encode.mDUpdateAction(MDUpdateAction::NEW);
@@ -146,7 +146,7 @@ protected:
         encode.mDInsertTimestamp().time(timer);
         encode.mDEntryPositionNo(default_values.mDEntryPositionNo);
         encode.secondaryOrderID(default_values.secondaryOrderID);
-        _buffer->set_size(encode.encodedLength() + b3_header::encoded_lenght() + header.encodedLength());
+        _buffer->set_size(encode.encodedLength() + b3_header::encoded_lenght() + header.encodedLength() + framing_header::encoded_length());
     }
     void SetUp() override {
         create_msg();

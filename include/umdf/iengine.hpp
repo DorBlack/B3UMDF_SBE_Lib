@@ -43,7 +43,6 @@ namespace b3::engine
     {
         InstrumentDefinition,
         Snapshot,
-        IncrementalTransition,
         Incremental,
         IncrementalGap,
         IncrementalReset,

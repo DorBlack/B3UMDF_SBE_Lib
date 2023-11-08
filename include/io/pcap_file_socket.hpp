@@ -26,4 +26,60 @@
 #ifndef B3MKTDATA_PCAP_FILE_SOCKET_HPP
 #define B3MKTDATA_PCAP_FILE_SOCKET_HPP
 
+#include "isocket.hpp"
+#include "pcap_reader.h"
+#include <ctime>
+#include "time.h"
+
+namespace io {
+
+template<typename Buffer>
+struct socket_pcap {
+    using notification_type = std::shared_ptr<io::socket::socket_notification<Buffer>>;
+
+    using Buffer_Type = Buffer;
+
+    socket_pcap(std::string path, notification_type notify)
+            :
+            _path(path), _notify(notify)
+    {
+
+        PcapResults out;
+        out.output = [&](const u_char* data, std::size_t size) {
+            auto buffer = std::make_shared<Buffer>();
+            std::memcpy(buffer->data(), data, size);
+            clock_gettime(CLOCK_MONOTONIC, &_timer);
+            buffer->set_size(size);
+            buffer->created = _timer.tv_nsec;
+            _notify->on_msg_received(buffer);
+        };
+        out.error = [&](auto error) {
+
+        };
+        _pcap_reader = std::make_shared<PcapReader>(_path, out);
+    }
+
+    static std::shared_ptr<socket_pcap<Buffer>>
+    create_socket(std::string interface, [[maybe_unused]]std::string address,
+            [[maybe_unused]]short port, notification_type notify)
+    {
+        return std::make_shared<socket_pcap>(address, notify);
+    }
+
+    void start()
+    {
+        _pcap_reader->start();
+    }
+
+    void stop()
+    {
+    }
+
+private:
+    std::string _path;
+    notification_type _notify;
+    std::shared_ptr<PcapReader> _pcap_reader;
+    struct timespec _timer;
+};
+}
 #endif //B3MKTDATA_PCAP_FILE_SOCKET_HPP

@@ -38,7 +38,8 @@ struct st_cache {
 
     void input(Ty value)
     {
-        _cache[_head.load() & _mask] = value;
+        auto pos = _head & _mask;
+        _cache[pos] = value;
         _head.fetch_add(1);
     }
 
@@ -56,7 +57,7 @@ private:
 
     static constexpr std::uint64_t _mask = (1 << Pow)-1;
     std::uint64_t _tail = 0;
-    std::atomic<std::uint64_t> _head = 0;
+    std::atomic_uint64_t _head = 0;
     Ty _cache[1 << Pow];
 };
 }

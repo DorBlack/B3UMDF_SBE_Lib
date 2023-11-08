@@ -1,0 +1,1 @@
+java -Dsbe.target.language=Cpp -Dsbe.output.dir=include/b3/protocol -Dsbe.errorLog=yes -jar ./sbe_template/sbe-all-1.29.0.jar ./sbe_template/b3-market-data-messages-1.6.0.xml

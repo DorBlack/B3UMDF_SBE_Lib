@@ -13,8 +13,18 @@ target_link_libraries(asio INTERFACE Threads::Threads)
 add_library(b3_umdf)
 target_sources(b3_umdf PRIVATE umdf/impl_channel.cpp)
 target_include_directories(b3_umdf PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../include)
-target_link_libraries(b3_umdf PRIVATE asio Threads::Threads)
 target_compile_features(b3_umdf PUBLIC cxx_std_20)
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    message("--Debug Build")
+    target_compile_options(b3_umdf PUBLIC -fprofile-arcs -ftest-coverage -fPIC -O0)
+    target_link_libraries(b3_umdf pcap asio Threads::Threads gcov)
+else ()
+    target_link_libraries(b3_umdf PRIVATE pcap asio Threads::Threads)
+endif()
+
+add_executable(backtest_sample back_test.cpp)
+target_link_libraries(backtest_sample b3_umdf)
 
 # add_library(${LIB_NAME} SHARED
 #        ../include/io/udp_socket_receiver.hpp)

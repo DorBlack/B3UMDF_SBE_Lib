@@ -1,0 +1,7 @@
+.cache/*
+.vs/*
+out/*
+build/*
+
+compile_commands.json
+*.csv

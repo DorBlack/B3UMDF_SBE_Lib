@@ -29,6 +29,7 @@
 #include "b3/protocol/sbe_message.hpp"
 #include "memory/buffer.hpp"
 #include "io/udp_socket_receiver.hpp"
+#include "io/pcap_file_socket.hpp"
 #include "config/channel_config.hpp"
 #include "umdf/channel_engine.hpp"
 
@@ -53,12 +54,18 @@ struct EngineMock
 };
 
 using Buffer = memory::buffer;
-using Socket = io::socket::udp_multicast<io::socket::socket_notification, Buffer>;
-using Engine = b3::umdf::umdf_b3_sbe_engine<Buffer>;
-using Protocol = b3::protocol::sbe::message<Buffer>;
-using Channel = b3::umdf::channel<Socket, Buffer, Engine, Protocol, b3::engine::channel_config>;
+using Socket = io::socket_pcap<Buffer>;
+using Channel = b3::umdf::channel<Socket, b3::umdf::umdf_b3_sbe_engine, b3::protocol::sbe::message, b3::engine::channel_config>;
 
 TEST(ChannelTest, Create)
 {
-    std::shared_ptr<Channel> ch;
+    b3::engine::channel_config config;
+
+    auto notification = std::make_shared<b3::umdf::channel_notification<b3::protocol::sbe::message<Buffer>>>();
+    notification->on_incremental = [&](auto msg) {};
+    notification->on_instrument_def = [&](auto msg) {};
+    notification->on_snapshot = [&](auto msg){};
+
+    std::shared_ptr<Channel> ch = std::make_shared<Channel>(config, notification);
+  //  ch->start();
 }
