@@ -20,6 +20,9 @@ template< template<typename Ty> class Notification, typename Buffer>
 class udp_multicast
 {
 public:
+
+    using Buffer_Type = Buffer;
+
     udp_multicast(const asio::ip::address& listen_address,
             const asio::ip::address& multicast_address,
             const short port,

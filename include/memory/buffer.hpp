@@ -52,8 +52,9 @@ struct buffer
        return __size;
    }
 
-   std::time_t created = std::time(0);
+    long created = 0x00;
     std::size_t _size = 0;
+
 private:
     constexpr static std::size_t __size = 1400;
     char _data[__size];

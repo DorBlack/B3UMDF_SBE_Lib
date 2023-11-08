@@ -19,10 +19,7 @@ macro(package_add_test_with_libraries TESTNAME FILES LIBRARIES TEST_WORKING_DIRE
 
     
     target_compile_features(${TESTNAME} PUBLIC cxx_std_20)
-    if(UNIX)
-        target_compile_options(${TESTNAME} PRIVATE -fprofile-arcs -ftest-coverage -fPIC -O0)
-        target_link_libraries(${TESTNAME} gcov)
-    endif(UNIX)
+
 endmacro()
 
 set(LIBS_DEPENDS  b3_umdf asio)

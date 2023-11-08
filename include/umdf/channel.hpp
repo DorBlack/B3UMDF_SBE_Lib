@@ -44,11 +44,11 @@ namespace b3::umdf
     };
 
     template<typename Socket,
-                typename Buffer,
-                typename Engine,
-                typename Protocol, typename Config>
+                template<typename Ty> typename Engine,
+                template<typename Ty> typename Protocol, typename Config>
     class channel
     {
+        using Buffer = Socket::Buffer_Type;
     private:
 
         using thread_ptr = std::shared_ptr<std::thread>;
@@ -62,16 +62,18 @@ namespace b3::umdf
         };
 
     public:
-        channel(Config configuration, std::shared_ptr<channel_notification<Protocol>> notify) :
+        channel(Config configuration, std::shared_ptr<channel_notification<Protocol<Buffer>>> notify) :
             _configuration(configuration) , _notify(notify)
         {
         }
 
         void start()
         {
+            _is_running = true;
             create_sockets();
-           // create_engine();
-
+            create_engine();
+            _cache_feed_a = std::make_shared<memory::st_cache<std::shared_ptr<Buffer>>>();
+            _cache_feed_b = std::make_shared<memory::st_cache<std::shared_ptr<Buffer>>>();
             _th_instrument_def = std::make_shared<std::thread>(([&](){
                 _sock_instrument_def->start();
             }));
@@ -80,17 +82,20 @@ namespace b3::umdf
                 _sock_snapshot->start();
             });
 
+
             _th_incremental_feed_a = std::make_shared<std::thread>([&](){
                 _sock_incremental_feed_a->start();
             });
 
+            /*
             _th_incremental_feed_b = std::make_shared<std::thread>([&](){
                 _sock_incremental_feed_b->start();
             });
-
+            */
             _th_dispatch_incremental = std::make_shared<std::thread>([&]() {
                 dispatch_incremental();
             });
+
         }
 
         void stop()
@@ -140,7 +145,6 @@ namespace b3::umdf
                         _configuration.instrument_def.address,
                         _configuration.instrument_def.port, notification);
             }
-
             {
                 auto notification = std::make_shared<io::socket::socket_notification<Buffer>>();
                 notification->on_error = [&](std::error_code ec) {
@@ -157,6 +161,7 @@ namespace b3::umdf
                         _configuration.snapshot.port, notification);
             }
 
+
             {
                 auto notification = std::make_shared<io::socket::socket_notification<Buffer>>();
                 notification->on_error = [&](std::error_code ec) {
@@ -172,7 +177,7 @@ namespace b3::umdf
                         _configuration.feed_a.address,
                         _configuration.feed_a.port, notification);
             }
-
+/*
             {
                 auto notification = std::make_shared<io::socket::socket_notification<Buffer>>();
                 notification->on_error = [&](std::error_code ec) {
@@ -188,39 +193,57 @@ namespace b3::umdf
                         _configuration.feed_b.address,
                         _configuration.feed_b.port, notification);
             }
+            */
         }
 
         void create_engine()
         {
-                auto engine_notification = std::make_shared<b3::engine::engine_notification<Protocol>>();
-                engine_notification->on_incremental([&](auto msg) {
+                auto engine_notification = std::make_shared<b3::engine::engine_notification<Protocol<Buffer>>>();
+                engine_notification->on_incremental = [&](auto msg) {
                     _notify->on_incremental(msg);
-                });
+                };
 
-                engine_notification->on_snapshot([&](auto msg) {
+                engine_notification->on_snapshot = [&](auto msg) {
                     _notify->on_snapshot(msg);
-                });
+                };
 
-                engine_notification->on_instrument_def([&](auto msg) {
+                engine_notification->on_instrument_def = [&](auto msg) {
                     _notify->on_instrument_def(msg);
-                });
+                };
 
-                engine_notification->on_notification([&](auto notify) {
+                engine_notification->on_notification = [&](auto notify) {
                     on_engine_notification(notify);
-                });
+                };
 
-                _engine = std::make_shared<Engine>(engine_notification);
+                _engine = std::make_shared<Engine<Buffer>>(engine_notification);
         }
 
         void on_engine_notification(engine::NotificationType notification) {
             switch (notification) {
-            case engine::NotificationType::InstrumentDefinition:break;
-            case engine::NotificationType::Snapshot:break;
-            case engine::NotificationType::IncrementalTransition:break;
-            case engine::NotificationType::Incremental:break;
-            case engine::NotificationType::IncrementalGap:break;
-            case engine::NotificationType::IncrementalReset:break;
-            case engine::NotificationType::IncrementalFullReset:break;
+            case engine::NotificationType::InstrumentDefinition:{
+                std::cout << "Phase: Instrument Definition" << std::endl;
+                break;
+            }
+            case engine::NotificationType::Snapshot:{
+                std::cout << "Phase: Snapshot" << std::endl;
+                break;
+            }
+            case engine::NotificationType::Incremental:{
+                std::cout << "Phase: Incremental" << std::endl;
+                break;
+            }
+            case engine::NotificationType::IncrementalGap:{
+                std::cout << "Phase: Incremental Gap" << std::endl;
+                break;
+            }
+            case engine::NotificationType::IncrementalReset:{
+                std::cout << "Phase: Incremental Reset" << std::endl;
+                break;
+            }
+            case engine::NotificationType::IncrementalFullReset: {
+                std::cout << "Phase: Incremental Full Reset" << std::endl;
+                break;
+            }
             }
         }
 
@@ -297,8 +320,8 @@ namespace b3::umdf
         std::shared_ptr<Socket> _sock_incremental_feed_b;
         std::shared_ptr<memory::st_cache<std::shared_ptr<Buffer>>> _cache_feed_a;
         std::shared_ptr<memory::st_cache<std::shared_ptr<Buffer>>> _cache_feed_b;
-        std::shared_ptr<Engine> _engine;
-        std::shared_ptr<channel_notification<Protocol>> _notify;
+        std::shared_ptr<Engine<Buffer>> _engine;
+        std::shared_ptr<channel_notification<Protocol<Buffer>>> _notify;
 
         Config _configuration;
         bool _is_running;

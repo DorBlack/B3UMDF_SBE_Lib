@@ -54,10 +54,10 @@ struct EngineMock
 };
 
 using Buffer = memory::buffer;
-using Socket = socket_pcap<Buffer>;
+using Socket = io::socket_pcap<Buffer>;
 using Engine = b3::umdf::umdf_b3_sbe_engine<Buffer>;
 using Protocol = b3::protocol::sbe::message<Buffer>;
-using Channel = b3::umdf::channel<Socket, Buffer, Engine, Protocol, b3::engine::channel_config>;
+using Channel = b3::umdf::channel<Socket, Engine, Protocol, b3::engine::channel_config>;
 
 TEST(ChannelTest, Create)
 {

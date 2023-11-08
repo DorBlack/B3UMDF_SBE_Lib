@@ -38,6 +38,7 @@ struct umdf_b3_sbe_engine {
     enum class Phase {
         InstrumentDef,
         Snapshot,
+        IncrementalTrans,
         Incremental
     };
 
@@ -70,14 +71,19 @@ struct umdf_b3_sbe_engine {
     using protocol_type = protocol::sbe::message<Buffer>;
     using notify_type = engine::engine_notification<protocol_type>;
     using carrousel_container = std::vector<std::shared_ptr<protocol_type>>;
+    using incremental_container = std::vector<std::shared_ptr<protocol_type>>;
 
 
     umdf_b3_sbe_engine(std::shared_ptr<notify_type> notify) : _notify(notify) {
-
+        _notify->on_notification(b3::engine::NotificationType::InstrumentDefinition);
     }
 
     void instrument_def(std::shared_ptr<Buffer> buffer) {
-        _instrumental(buffer);
+        if(_current_status._phase != Phase::InstrumentDef)
+        {
+            return;
+        }
+        build_instrument_def_carrousel(buffer);
     }
 
     void snapshot(std::shared_ptr<Buffer> buffer) {
@@ -89,6 +95,7 @@ struct umdf_b3_sbe_engine {
     }
 
     bool incremental(std::shared_ptr<Buffer> buffer) {
+
         return _incremental(buffer);
     }
 
@@ -98,13 +105,8 @@ struct umdf_b3_sbe_engine {
 
 private:
 
-    void _instrumental(std::shared_ptr<Buffer> buffer)
+    void build_instrument_def_carrousel(std::shared_ptr<Buffer> buffer)
     {
-        if(_current_status._phase != Phase::InstrumentDef)
-        {
-            return;
-        }
-
         std::shared_ptr<protocol_type> current_msg = nullptr;
         current_msg = protocol_type::create_message(buffer);
         auto b3ret = carrousel_check(_current_status.instrument_def, current_msg);
@@ -116,24 +118,26 @@ private:
                 if(_current_status.instrument_def.report != _current_status.instrument_def.tot_report)
                 {
                     //TODO Error
+                    std::cout << "report coutn error " << _current_status.instrument_def.report << " : " << _current_status.instrument_def.tot_report << std::endl;
                 }
+
                 for(auto value : _storage_instrument_def)
                 {
                     _notify->on_instrument_def(value);
                 }
+                _storage_instrument_def.clear();
+                _current_status.instrument_def.report = 0x00;
+                _current_status.instrument_def.tot_report = 0x00;
+                _current_status._phase = Phase::Snapshot;
+                _notify->on_notification(b3::engine::NotificationType::Snapshot);
             }
             else
             {
                 for(auto msg : current_msg->body)
                 {
-                    if(msg->header->templateId() == SecurityDefinition_4::SBE_TEMPLATE_ID)
-                    {
-                        auto ptr = std::get_if<SecurityDefinition_4>(&(msg->body));
-                        _current_status.incremental.seqnum = ptr->totNoRelatedSym();
-                    }
-
-                    ++_current_status.snapshot.report;
+                    ++_current_status.instrument_def.report;
                 }
+                _storage_instrument_def.emplace_back(current_msg);
             }
             break;
         }
@@ -156,6 +160,7 @@ private:
             {
                 ++_current_status.instrument_def.report;
             }
+            _storage_instrument_def.emplace_back(current_msg);
 
             break;
         }
@@ -182,12 +187,17 @@ private:
             {
                 if(_current_status.snapshot.report != _current_status.snapshot.tot_report)
                 {
-                    //TODO Error
+                    std::cout << "total report error snapshot: tot = " << _current_status.snapshot.tot_report << " : " << _current_status.snapshot.report << std::endl;
                 }
+
                 for(auto value : _storage_snapshot)
                 {
                     _notify->on_snapshot(value);
                 }
+                _current_status.snapshot.report = 0x00;
+                _current_status.snapshot.tot_report = 0x00;
+                _current_status._phase = Phase::IncrementalTrans;
+                _notify->on_notification(b3::engine::NotificationType::Incremental);
             }
             else
             {
@@ -197,30 +207,30 @@ private:
                     {
                         auto ptr = std::get_if<SnapshotFullRefresh_Header_30>(&(msg->body));
                         _current_status.incremental.seqnum = ptr->lastMsgSeqNumProcessed();
+                        _current_status.snapshot.tot_report = ptr->totNumReports();
+                        ++_current_status.snapshot.report;
                     }
 
-                    ++_current_status.snapshot.report;
                 }
+                _storage_snapshot.emplace_back(current_msg);
             }
-
            break;
         }
         case B3SeqNumResult::NewSeqVersion: {
             _storage_snapshot.clear();
-            if(current_msg->body[0]->header->templateId() != SnapshotFullRefresh_Header_30::SBE_TEMPLATE_ID)
-            {
-                //TODO: Error a primeira mesagem deveria ser essa
-            }
-
-            auto ptr = std::get_if<SnapshotFullRefresh_Header_30>(&current_msg->body[0]->body);
-            _current_status.snapshot.tot_report = ptr->totNumReports();
             _current_status.snapshot.report = 0x00;
-            _current_status.incremental.seqnum = ptr->lastMsgSeqNumProcessed();
 
             for(auto msg : current_msg->body)
             {
-                ++_current_status.snapshot.report;
+                if(msg->header->templateId() == SnapshotFullRefresh_Header_30::SBE_TEMPLATE_ID)
+                {
+                    auto ptr = std::get_if<SnapshotFullRefresh_Header_30>(&current_msg->body[0]->body);
+                    _current_status.snapshot.tot_report = ptr->totNumReports();
+                    _current_status.incremental.seqnum = ptr->lastMsgSeqNumProcessed();
+                    ++_current_status.snapshot.report;
+                }
             }
+            _storage_snapshot.emplace_back(current_msg);
             break;
         }
         case B3SeqNumResult::Gap: {
@@ -234,12 +244,72 @@ private:
 
     bool _incremental(std::shared_ptr<Buffer> buffer) {
         auto ret = true;
-        if(_current_status._phase != Phase::Incremental)
+        if(_current_status._phase == Phase::InstrumentDef)
         {
             return ret;
         }
+
         std::shared_ptr<protocol_type> current_msg = nullptr;
         current_msg = protocol_type::create_message(buffer);
+
+        if(current_msg->body[0]->header->templateId() == Sequence_2::SBE_TEMPLATE_ID)
+        {
+            return ret;
+        }
+
+        if(current_msg->body[0]->header->templateId() == SequenceReset_1::SBE_TEMPLATE_ID)
+        {
+            _notify->on_incremental(current_msg);
+            _storage_incremental.clear();
+            _notify->on_notification(engine::NotificationType::IncrementalReset);
+            _current_status._phase = Phase::Snapshot;
+            _notify->on_notification(engine::NotificationType::Snapshot);
+            return ret;
+        }
+
+        if(current_msg->body[0]->header->templateId() == ChannelReset_11::SBE_TEMPLATE_ID)
+        {
+            _notify->on_incremental(current_msg);
+            _storage_incremental.clear();
+            _notify->on_notification(engine::NotificationType::IncrementalFullReset);
+            _current_status._phase = Phase::InstrumentDef;
+            _notify->on_notification(engine::NotificationType::InstrumentDefinition);
+            return ret;
+        }
+
+        if(_current_status._phase == Phase::Snapshot)
+        {
+            _storage_incremental.push_back(current_msg);
+            return ret;
+        }
+
+        if(_current_status._phase == Phase::IncrementalTrans) {
+            std::cout << "Send Enqueued Tot: "  << _storage_incremental.size() << std::endl;
+            for(auto msg : _storage_incremental)
+            {
+                auto b3ret = incremental_check(current_msg);
+
+                switch (b3ret) {
+                case B3SeqNumResult::Ok: {
+                    _notify->on_incremental(current_msg);
+                    break;
+                }
+                case B3SeqNumResult::Discard: {
+                    ret = true;
+                    break;
+                }
+                case B3SeqNumResult::Gap: {
+                    _notify->on_notification(engine::NotificationType::IncrementalGap);
+                    _current_status._phase = Phase::Snapshot;
+                    _notify->on_notification(engine::NotificationType::Snapshot);
+                    ret = false;
+                    break;
+                }
+                }
+            }
+            _storage_incremental.clear();
+            _current_status._phase = Phase::Incremental;
+        }
         //first msg processed
         if(_current_status.incremental.version == 0x00)
         {
@@ -248,12 +318,11 @@ private:
 
         if(_current_status.incremental.version != current_msg->b3header->get_sequence_version())
         {
-
-        }
-
-        if(current_msg->body[0]->header->templateId() == Sequence_2::SBE_TEMPLATE_ID)
-        {
-            return ret;
+            _storage_incremental.clear();
+            _notify->on_notification(engine::NotificationType::IncrementalFullReset);
+            _current_status._phase = Phase::InstrumentDef;
+            _notify->on_notification(engine::NotificationType::InstrumentDefinition);
+            //TODO tem que mandar uma msg informando o cliente para limpar tudo que deu ruim.
         }
 
         auto b3ret = incremental_check(current_msg);
@@ -268,7 +337,10 @@ private:
             break;
         }
         case B3SeqNumResult::Gap: {
-                ret = false;
+            _notify->on_notification(engine::NotificationType::IncrementalGap);
+            _current_status._phase = Phase::Snapshot;
+            _notify->on_notification(engine::NotificationType::Snapshot);
+            ret = false;
             break;
         }
         }
@@ -319,6 +391,10 @@ private:
         {
             ret = B3SeqNumResult::Discard;
         }
+        else
+        {
+            ++status.seqnum;
+        }
 
         return ret;
     }
@@ -327,6 +403,7 @@ private:
     std::shared_ptr<notify_type> _notify;
     carrousel_container _storage_snapshot;
     carrousel_container _storage_instrument_def;
+    incremental_container _storage_incremental;
 };
 }
 
