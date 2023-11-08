@@ -75,14 +75,14 @@ TEST_F(B3_Protocol_SBE_MSG_Test, OrderMBO50)
     MessageHeader header;
 
     // Criando o encoder da HEADER
-    header.wrap(_buffer->data(), b3_header::encoded_lenght(), 0, _buffer->capacity())
+    header.wrap(_buffer->data(), b3_header::encoded_lenght() + framing_header::encoded_length(), 0, _buffer->capacity())
             .blockLength(Order_MBO_50::sbeBlockLength())
             .templateId(Order_MBO_50::sbeTemplateId())
             .schemaId(Order_MBO_50::sbeSchemaId())
             .version(Order_MBO_50::sbeSchemaVersion());
 
     // Fazendo o encoder do BODY
-    encode.wrapForEncode(_buffer->data(), header.encodedLength() + b3_header::encoded_lenght(), _buffer->capacity());
+    encode.wrapForEncode(_buffer->data(), header.encodedLength() + b3_header::encoded_lenght() + framing_header::encoded_length(), _buffer->capacity());
     encode.securityID(default_values.securityId);
     encode.matchEventIndicator().clear();
     encode.mDUpdateAction(MDUpdateAction::NEW);
@@ -95,11 +95,11 @@ TEST_F(B3_Protocol_SBE_MSG_Test, OrderMBO50)
     encode.mDInsertTimestamp().time(timer);
     encode.mDEntryPositionNo(default_values.mDEntryPositionNo);
     encode.secondaryOrderID(default_values.secondaryOrderID);
-    _buffer->set_size(encode.encodedLength() + b3_header::encoded_lenght() + header.encodedLength());
+    _buffer->set_size(encode.encodedLength() + b3_header::encoded_lenght() + header.encodedLength() + framing_header::encoded_length());
 
-    auto msg = message<memory::buffer>(_buffer, 0);
+    auto msg = message<memory::buffer>(_buffer);
 
-    auto mbo_order_50 = std::get_if<Order_MBO_50>(&msg.body);
+    auto mbo_order_50 = std::get_if<Order_MBO_50>(&(msg.body[0]->body));
 
     ASSERT_TRUE(mbo_order_50 != nullptr);
     EXPECT_EQ(mbo_order_50->securityID(), default_values.securityId) << "MBO_Order_50 SecurityID Error";
