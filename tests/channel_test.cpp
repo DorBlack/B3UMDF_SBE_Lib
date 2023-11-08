@@ -55,15 +55,13 @@ struct EngineMock
 
 using Buffer = memory::buffer;
 using Socket = io::socket_pcap<Buffer>;
-using Engine = b3::umdf::umdf_b3_sbe_engine<Buffer>;
-using Protocol = b3::protocol::sbe::message<Buffer>;
-using Channel = b3::umdf::channel<Socket, Engine, Protocol, b3::engine::channel_config>;
+using Channel = b3::umdf::channel<Socket, b3::umdf::umdf_b3_sbe_engine, b3::protocol::sbe::message, b3::engine::channel_config>;
 
 TEST(ChannelTest, Create)
 {
     b3::engine::channel_config config;
 
-    auto notification = std::make_shared<b3::umdf::channel_notification<Protocol>>();
+    auto notification = std::make_shared<b3::umdf::channel_notification<b3::protocol::sbe::message<Buffer>>>();
     notification->on_incremental = [&](auto msg) {};
     notification->on_instrument_def = [&](auto msg) {};
     notification->on_snapshot = [&](auto msg){};
