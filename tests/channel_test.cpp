@@ -25,13 +25,13 @@
 
 #include "gtest/gtest.h"
 
-#include "umdf/channel.hpp"
+#include "b3/channel.hpp"
 #include "b3/protocol/sbe_message.hpp"
 #include "memory/buffer.hpp"
 #include "io/udp_socket_receiver.hpp"
 #include "io/pcap_file_socket.hpp"
-#include "config/channel_config.hpp"
-#include "umdf/channel_engine.hpp"
+#include "b3/channel_config.hpp"
+#include "b3/channel_engine.hpp"
 
 
 

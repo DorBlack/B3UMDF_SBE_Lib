@@ -26,7 +26,7 @@
 #ifndef B3MKTDATA_PCAP_FILE_SOCKET_HPP
 #define B3MKTDATA_PCAP_FILE_SOCKET_HPP
 
-#include "isocket.hpp"
+#include "types.h"
 #include "pcap_reader.h"
 #include <ctime>
 #include "time.h"
@@ -50,7 +50,7 @@ struct socket_pcap {
             std::memcpy(buffer->data(), data, size);
             clock_gettime(CLOCK_MONOTONIC, &_timer);
             buffer->set_size(size);
-            buffer->created = _timer.tv_nsec;
+            buffer->created_at(_timer.tv_nsec);
             _notify->on_msg_received(buffer);
         };
         out.error = [&](auto error) {

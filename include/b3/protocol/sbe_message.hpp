@@ -176,6 +176,7 @@ namespace b3::protocol::sbe
     template<typename Buffer>
     struct message
     {
+	std::size_t body_size = 0x00;
 
         template<typename Ty>
         static std::shared_ptr<message> create_message(std::shared_ptr<Ty> buffer)
@@ -192,10 +193,12 @@ namespace b3::protocol::sbe
 
         long get_created_time_nano()
         {
-            return _buffer->created;
+            return _buffer->created_at();
         }
 
-
+        void release() {
+            _buffer->release();
+        }
     private:
 
         void build_msg()
@@ -211,6 +214,7 @@ namespace b3::protocol::sbe
 
                  auto msg = decoder_body(_buffer, current_offset);
                  body.emplace_back(msg);
+		 ++body_size;
             }
         }
 

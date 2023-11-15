@@ -28,10 +28,11 @@
 
 #include "b3/protocol/sbe_message.hpp"
 #include "memory/buffer.hpp"
-#include "config/channel_config.hpp"
-#include "umdf/channel_engine.hpp"
+#include "b3/channel_config.hpp"
+#include "b3/channel_engine.hpp"
 #include "io/pcap_file_socket.hpp"
-#include "umdf/channel.hpp"
+#include "io/udp_socket_receiver.hpp"
+#include "b3/channel.hpp"
 
 #include <functional>
 
@@ -44,6 +45,7 @@ struct channel_notification {
     std::function<void(std::shared_ptr<protocol_type>)> on_security_def;
 };
 
+/*
 struct backtest_channel {
 
     using buffer_type = memory::buffer;
@@ -84,10 +86,46 @@ private:
     std::shared_ptr<channel_type> _channel;
     std::shared_ptr<channel_notification> _notify;
 
-};
+};*/
 
 struct multicast_channel {
+    using buffer_type = memory::buffer;
+    using socket_type = io::socket::udp_multicast;
+    using channel_type = umdf::channel<socket_type,
+                                       b3::umdf::umdf_b3_sbe_engine,
+                                       b3::protocol::sbe::message,
+                                       b3::engine::channel_config>;
 
+    multicast_channel(b3::engine::channel_config& config, std::shared_ptr<channel_notification> notify) : _config(config),
+          _notify(notify){}
+
+    void start()
+    {
+        create_channel();
+        _channel->start();
+    }
+  private:
+    void create_channel()
+    {
+        auto notify = std::make_shared<umdf::channel_notification<b3::protocol::sbe::message<buffer_type>>>();
+
+        notify->on_instrument_def = [&](auto msg) {
+            _notify->on_security_def(msg);
+        };
+
+        notify->on_snapshot = [&](auto msg) {
+            _notify->on_snapshot(msg);
+        };
+
+        notify->on_incremental = [&](auto msg) {
+            _notify->on_incremental(msg);
+        };
+        _channel = std::make_shared<channel_type>(_config, notify);
+    }
+
+    const b3::engine::channel_config& _config;
+    std::shared_ptr<channel_type> _channel;
+    std::shared_ptr<channel_notification> _notify;
 };
 
 };

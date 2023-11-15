@@ -27,7 +27,7 @@
 #define MARKET_DATA_CHANNEL_ENGINE_HPP
 
 #include "b3/protocol/sbe_message.hpp"
-#include "iengine.hpp"
+#include "types.h"
 
 namespace b3::umdf
 {
@@ -197,6 +197,7 @@ private:
                 _current_status.snapshot.report = 0x00;
                 _current_status.snapshot.tot_report = 0x00;
                 _current_status._phase = Phase::IncrementalTrans;
+                std::cout << "snapshot last seqnum " << _current_status.incremental.seqnum << std::endl;
                 _notify->on_notification(b3::engine::NotificationType::Incremental);
             }
             else
@@ -287,6 +288,10 @@ private:
             std::cout << "Send Enqueued Tot: "  << _storage_incremental.size() << std::endl;
             for(auto msg : _storage_incremental)
             {
+                if(_current_status._phase == Phase::Snapshot)
+                {
+                    continue;
+                }
                 auto b3ret = incremental_check(current_msg);
 
                 switch (b3ret) {
@@ -299,6 +304,7 @@ private:
                     break;
                 }
                 case B3SeqNumResult::Gap: {
+                    std::cout << "Gap last seqnum: " << current_msg->b3header->get_sequence_number() << std::endl;
                     _notify->on_notification(engine::NotificationType::IncrementalGap);
                     _current_status._phase = Phase::Snapshot;
                     _notify->on_notification(engine::NotificationType::Snapshot);

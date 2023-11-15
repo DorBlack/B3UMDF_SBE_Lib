@@ -27,38 +27,56 @@
 #define MARKET_DATA_BUFFER_HPP
 #include <ctime>
 #include <cstddef>
+#include "allocator.hpp"
 
 namespace memory
 {
-struct buffer
-{
-   char * data()
-   {
-       return _data;
-   }
+    struct buffer
+    {
+        buffer() = delete;
 
-   std::size_t size()
-   {
-       return _size;
-   }
+        buffer(allocator* __alloc, _Basic_block* __block) :
+                _M_allocator(__alloc),
+                _M_block_memory(__block) {}
 
-   void set_size(std::size_t s)
-   {
-       _size = s;
-   }
+        inline char * data()
+        {
+            return _M_block_memory->data();
+        }
 
-   std::size_t capacity()
-   {
-       return __size;
-   }
+        inline std::size_t size()
+        {
+            return _M_block_memory->size();
+        }
 
-    long created = 0x00;
-    std::size_t _size = 0;
+        inline void set_size(std::size_t __size)
+        {
+            _M_block_memory->size(__size);
+        }
 
-private:
-    constexpr static std::size_t __size = 1400;
-    char _data[__size];
-    std::byte _padding[632];
-};
+        inline const std::size_t capacity() const
+        {
+            return _M_block_memory->capacity();
+        }
+
+        inline const long created_at() const
+        {
+            return _M_block_memory->created_at();
+        }
+
+        inline void created_at(long __created_at)
+        {
+            _M_block_memory->created_at(__created_at);
+        }
+
+        inline const void release() const
+        {
+            _M_allocator->deallocate(_M_block_memory, 1);
+        }
+
+    private:
+        _Basic_block *_M_block_memory;
+        allocator* _M_allocator;
+    };
 } // namespace udp
 #endif //MARKET_DATA_BUFFER_HPP

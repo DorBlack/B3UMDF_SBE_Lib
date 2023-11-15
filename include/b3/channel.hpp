@@ -29,19 +29,12 @@
 #include <memory>
 #include <thread>
 
-#include "io/isocket.hpp"
-#include "umdf/iengine.hpp"
+#include "types.h"
 #include "memory/st_cache.hpp"
 
 namespace b3::umdf
 {
-    template<typename Ty>
-    struct channel_notification
-    {
-        std::function<void(std::shared_ptr<Ty>)> on_instrument_def;
-        std::function<void(std::shared_ptr<Ty>)> on_snapshot;
-        std::function<void(std::shared_ptr<Ty>)> on_incremental;
-    };
+
 
     template<typename Socket,
                 template<typename Ty> typename Engine,

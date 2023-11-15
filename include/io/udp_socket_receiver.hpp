@@ -11,22 +11,24 @@
 
 #include "asio.hpp"
 #include "memory/allocator.hpp"
+#include "memory/buffer.hpp"
+#include "types.h"
 
 namespace io::socket
 {
 
 
-template< template<typename Ty> class Notification, typename Buffer>
 class udp_multicast
 {
 public:
 
-    using Buffer_Type = Buffer;
+    using notification_type = std::shared_ptr<io::socket::socket_notification<memory::buffer>>;
+    using Buffer_Type = memory::buffer;
 
     udp_multicast(const asio::ip::address& listen_address,
             const asio::ip::address& multicast_address,
             const short port,
-            std::shared_ptr<Notification<Buffer>> notify)
+            notification_type notify)
             : _io_context(),
               _socket(_io_context),
               _notify(notify)
@@ -69,13 +71,13 @@ public:
         _io_context.stop();
     }
 
-    static std::shared_ptr<udp_multicast<Notification, Buffer>> create_socket(const std::string& interface,
+    static std::shared_ptr<udp_multicast> create_socket(const std::string& interface,
             const std::string& address,
             const short port,
-            std::shared_ptr<Notification<Buffer>> notify
+            notification_type notify
     )
     {
-        return std::make_shared<udp_multicast<Notification, Buffer>>(asio::ip::make_address(interface),
+        return std::make_shared<udp_multicast>(asio::ip::make_address(interface),
                 asio::ip::make_address(address), port, notify);
     }
 
@@ -83,7 +85,8 @@ private:
 
     void do_receive()
     {
-        _current_buffer = memory::allocate_shared_buffer(_storage);
+        _current_buffer = memory::allocator::make_shared_ptr<memory::buffer>(&_M_storage);
+
         _socket.async_receive_from(
                 asio::buffer(_current_buffer->data(), _current_buffer->capacity()),
                 _receiver_endpoint,
@@ -101,6 +104,8 @@ private:
         }
         else
         {
+            clock_gettime(CLOCK_MONOTONIC, &_timer);
+            _current_buffer->created_at((long)_timer.tv_nsec);
             _current_buffer->set_size(length);
             _notify->on_msg_received(_current_buffer);
         }
@@ -111,13 +116,14 @@ private:
         }
     }
 
-    memory::cb_allocator<Buffer> _storage;
-    std::shared_ptr<Buffer> _current_buffer;
+    memory::allocator _M_storage;
+    std::shared_ptr<Buffer_Type> _current_buffer;
     asio::io_context _io_context;
     asio::ip::udp::socket _socket;
     asio::ip::udp::endpoint _receiver_endpoint;
     bool _is_running = false;
-    std::shared_ptr<Notification<Buffer>> _notify;
+    notification_type _notify;
+    struct timespec _timer;
 };
 } // namespace io
 
