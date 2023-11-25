@@ -7,37 +7,15 @@
 
 #include <memory>
 #include <functional>
-
-namespace b3::engine
-{
-    enum class NotificationType
-    {
-        InstrumentDefinition,
-        Snapshot,
-        Incremental,
-        IncrementalGap,
-        IncrementalReset,
-        IncrementalFullReset
-    };
-
-    template<typename Protocol>
-    struct engine_notification
-    {
-        std::function<void(std::shared_ptr<Protocol>)> on_incremental;
-        std::function<void(std::shared_ptr<Protocol>)> on_snapshot;
-        std::function<void(std::shared_ptr<Protocol>)> on_instrument_def;
-        std::function<void(NotificationType)> on_notification;
-    };
-}
+#include "b3/protocol/sbe_message.hpp"
 
 namespace b3::umdf
 {
-    template<typename Ty>
-    struct channel_notification
-    {
-        std::function<void(std::shared_ptr<Ty>)> on_instrument_def;
-        std::function<void(std::shared_ptr<Ty>)> on_snapshot;
-        std::function<void(std::shared_ptr<Ty>)> on_incremental;
+    struct channel_notification {
+        using ProtocolType = b3::protocol::sbe::message;
+        std::function<void(const ProtocolType&)> on_incremental;
+        std::function<void(const ProtocolType&)> on_snapshot;
+        std::function<void(const ProtocolType&)> on_security_def;
     };
 }
 

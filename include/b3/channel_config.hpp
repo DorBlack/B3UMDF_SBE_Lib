@@ -28,9 +28,8 @@
 
 #include <string>
 
-namespace b3::engine
+namespace b3
 {
-
 struct multicast_config
 {
     std::string interface;
@@ -45,12 +44,6 @@ struct channel_config
     multicast_config instrument_def;
     multicast_config snapshot;
 };
-
-struct channel_by_instruments_config
-{
-
-};
-
 }
 
 

@@ -26,108 +26,36 @@
 #ifndef B3MKTDATA_B3_UMDF_SBE_API_HPP
 #define B3MKTDATA_B3_UMDF_SBE_API_HPP
 
-#include "b3/protocol/sbe_message.hpp"
-#include "memory/buffer.hpp"
 #include "b3/channel_config.hpp"
-#include "b3/channel_engine.hpp"
-#include "io/pcap_file_socket.hpp"
 #include "io/udp_socket_receiver.hpp"
 #include "b3/channel.hpp"
 
-#include <functional>
-
 namespace b3::umdf::sbe {
 
-struct channel_notification {
-    using protocol_type = b3::protocol::sbe::message<memory::buffer>;
-    std::function<void(std::shared_ptr<protocol_type>)> on_incremental;
-    std::function<void(std::shared_ptr<protocol_type>)> on_snapshot;
-    std::function<void(std::shared_ptr<protocol_type>)> on_security_def;
-};
+class multicast_channel {
+public:
+    using SocketType = io::socket::udp_multicast;
+    using ChannelType = b3::umdf::channel<SocketType>;
 
-/*
-struct backtest_channel {
-
-    using buffer_type = memory::buffer;
-    using socket_type = io::socket_pcap<buffer_type>;
-    using channel_type = umdf::channel<socket_type,
-                                            b3::umdf::umdf_b3_sbe_engine,
-                                            b3::protocol::sbe::message,
-                                            b3::engine::channel_config>;
-
-    backtest_channel(b3::engine::channel_config& config, std::shared_ptr<channel_notification> notify) : _config(config),
-    _notify(notify){}
-
-    void start()
-    {
-       create_channel();
-       _channel->start();
-    }
-private:
-    void create_channel()
-    {
-        auto notify = std::make_shared<umdf::channel_notification<b3::protocol::sbe::message<buffer_type>>>();
-
-        notify->on_instrument_def = [&](auto msg) {
-           _notify->on_security_def(msg);
-        };
-
-        notify->on_snapshot = [&](auto msg) {
-            _notify->on_snapshot(msg);
-        };
-
-        notify->on_incremental = [&](auto msg) {
-            _notify->on_incremental(msg);
-        };
-        _channel = std::make_shared<channel_type>(_config, notify);
-    }
-
-    const b3::engine::channel_config& _config;
-    std::shared_ptr<channel_type> _channel;
-    std::shared_ptr<channel_notification> _notify;
-
-};*/
-
-struct multicast_channel {
-    using buffer_type = memory::buffer;
-    using socket_type = io::socket::udp_multicast;
-    using channel_type = umdf::channel<socket_type,
-                                       b3::umdf::umdf_b3_sbe_engine,
-                                       b3::protocol::sbe::message,
-                                       b3::engine::channel_config>;
-
-    multicast_channel(b3::engine::channel_config& config, std::shared_ptr<channel_notification> notify) : _config(config),
-          _notify(notify){}
+    multicast_channel(b3::channel_config& __config,
+                      std::shared_ptr<channel_notification> __notify) :
+                      _M_config(__config),
+                      _M_notify(__notify){}
 
     void start()
     {
         create_channel();
-        _channel->start();
+        _M_channel->start();
     }
-  private:
+private:
     void create_channel()
     {
-        auto notify = std::make_shared<umdf::channel_notification<b3::protocol::sbe::message<buffer_type>>>();
-
-        notify->on_instrument_def = [&](auto msg) {
-            _notify->on_security_def(msg);
-        };
-
-        notify->on_snapshot = [&](auto msg) {
-            _notify->on_snapshot(msg);
-        };
-
-        notify->on_incremental = [&](auto msg) {
-            _notify->on_incremental(msg);
-        };
-        _channel = std::make_shared<channel_type>(_config, notify);
+        _M_channel = std::make_shared<ChannelType>(_M_config, _M_notify);
     }
 
-    const b3::engine::channel_config& _config;
-    std::shared_ptr<channel_type> _channel;
-    std::shared_ptr<channel_notification> _notify;
+    const b3::channel_config& _M_config;
+    std::shared_ptr<ChannelType> _M_channel;
+    std::shared_ptr<channel_notification> _M_notify;
 };
-
-};
-
+}
 #endif //B3MKTDATA_B3_UMDF_SBE_API_HPP

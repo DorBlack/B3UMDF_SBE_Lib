@@ -60,6 +60,8 @@
 #include "b3_umdf_mbo_sbe/TradeBust_57.h"
 #include "b3_umdf_mbo_sbe/SnapshotFullRefresh_Orders_MBO_71.h"
 
+#include "memory/buffer.hpp"
+
 using namespace b3::umdf::mbo::sbe;
 
 #include <iostream>
@@ -141,6 +143,13 @@ namespace b3::protocol::sbe
         const std::size_t _size;
     };
     struct sbe_message {
+
+        sbe_message() = default;
+        sbe_message(sbe_message& __other) = delete;
+        sbe_message(const sbe_message& __other) = delete;
+        sbe_message& operator=(const sbe_message& __other) = delete;
+        sbe_message& operator=(sbe_message& __other) = delete;
+
         std::unique_ptr<MessageHeader> header;
         std::variant<
                      SequenceReset_1,
@@ -173,25 +182,33 @@ namespace b3::protocol::sbe
                      > body;
     };
 
-    template<typename Buffer>
     struct message
     {
-	std::size_t body_size = 0x00;
+	    std::size_t body_size = 0x00;
+        std::unique_ptr<b3_header> b3header;
+        std::vector<std::shared_ptr<sbe_message>> body;
+        std::shared_ptr<memory::buffer> _buffer;
 
-        template<typename Ty>
-        static std::shared_ptr<message> create_message(std::shared_ptr<Ty> buffer)
-        {
-            return std::make_shared<message>(buffer);
-        }
-
-        message(std::shared_ptr<Buffer> buffer) : _buffer(buffer) {
+        message(std::shared_ptr<memory::buffer> buffer) : _buffer(buffer) {
             build_msg();
         }
 
-        std::unique_ptr<b3_header> b3header;
-        std::vector<std::shared_ptr<sbe_message>> body;
+        message(message&& __other) noexcept :
+        body_size(std::move(__other.body_size)),
+        b3header(std::move(__other.b3header)),
+        body(std::move(__other.body)),
+        _buffer(std::move(__other._buffer))
+        {}
 
-        long get_created_time_nano()
+        message(const message& __other) = delete;
+        message(message& __other) = delete;
+
+        message& operator=(const message& __other) = delete;
+        message& operator=(message& __other) = delete;
+        message& operator=(message&&) = delete;
+        message& operator=(const message&&) = delete;
+
+        long get_created_time_nano() const
         {
             return _buffer->created_at();
         }
@@ -219,7 +236,7 @@ namespace b3::protocol::sbe
         }
 
         template<typename Ty>
-        inline void decode_sbe_body(std::shared_ptr<sbe_message>& sbe_msg, std::shared_ptr<Buffer>& buffer, std::size_t& offset)
+        inline void decode_sbe_body(std::shared_ptr<sbe_message>& sbe_msg, std::shared_ptr<memory::buffer>& buffer, std::size_t& offset)
         {
             sbe_msg->body = Ty();
             auto ptr = std::get_if<Ty>(&sbe_msg->body);
@@ -228,7 +245,7 @@ namespace b3::protocol::sbe
             offset += ptr->decodeLength();
         }
 
-        std::shared_ptr<sbe_message> decoder_body(std::shared_ptr<Buffer> buffer, std::size_t& offset)
+        std::shared_ptr<sbe_message> decoder_body(std::shared_ptr<memory::buffer> buffer, std::size_t& offset)
         {
             auto sbe_msg = std::make_shared<sbe_message>();
 
@@ -354,7 +371,6 @@ namespace b3::protocol::sbe
             return sbe_msg;
         }
 
-        std::shared_ptr<Buffer> _buffer;
     };
 }
 

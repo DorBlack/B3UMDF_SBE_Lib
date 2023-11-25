@@ -22,70 +22,46 @@
 //
 // Created by Fábio da Silva Santana on 29/10/2023.
 //
-
 #ifndef MARKET_DATA_CHANNEL_HPP
 #define MARKET_DATA_CHANNEL_HPP
-
 #include <memory>
 #include <thread>
-
 #include "types.h"
 #include "memory/st_cache.hpp"
+#include "channel_config.hpp"
+#include "channel_engine.hpp"
+
 
 namespace b3::umdf
 {
-
-
-    template<typename Socket,
-                template<typename Ty> typename Engine,
-                template<typename Ty> typename Protocol, typename Config>
+    template<typename Socket>
     class channel
     {
-        using Buffer = Socket::Buffer_Type;
+
     private:
-
         using thread_ptr = std::shared_ptr<std::thread>;
-
+        using Buffer = memory::buffer;
         enum class SocketType
         {
             Instrument_def,
             Snapshot,
-            Incremental_feed_a,
-            Incremental_feed_b
+            Incremental_feed_a
         };
 
     public:
-        channel(Config configuration, std::shared_ptr<channel_notification<Protocol<Buffer>>> notify) :
-            _configuration(configuration) , _notify(notify)
+        channel(b3::channel_config configuration, std::shared_ptr<channel_notification> notify) :
+                _M_configuration(configuration) , _M_notify(notify)
         {
         }
 
         void start()
         {
-            _is_running = true;
+            _M_is_running = true;
+            _M_cache_feed_a = std::make_shared<memory::st_cache<std::shared_ptr<Buffer>>>();
+
             create_sockets();
-            create_engine();
-            _cache_feed_a = std::make_shared<memory::st_cache<std::shared_ptr<Buffer>>>();
-            _cache_feed_b = std::make_shared<memory::st_cache<std::shared_ptr<Buffer>>>();
-            _th_instrument_def = std::make_shared<std::thread>(([&](){
-                _sock_instrument_def->start();
-            }));
 
-            _th_snapshot = std::make_shared<std::thread>([&](){
-                _sock_snapshot->start();
-            });
-
-
-            _th_incremental_feed_a = std::make_shared<std::thread>([&](){
-                _sock_incremental_feed_a->start();
-            });
-
-            /*
-            _th_incremental_feed_b = std::make_shared<std::thread>([&](){
-                _sock_incremental_feed_b->start();
-            });
-            */
-            _th_dispatch_incremental = std::make_shared<std::thread>([&]() {
+            _M_th_dispatch_incremental = std::make_shared<std::thread>([&]() {
                 dispatch_incremental();
             });
 
@@ -93,21 +69,17 @@ namespace b3::umdf
 
         void stop()
         {
-            if(_sock_instrument_def)
+            if(_M_sock_instrument_definition)
             {
-                _sock_instrument_def->stop();
+                _M_sock_instrument_definition->stop();
             }
-            if(_sock_snapshot)
+            if(_M_sock_snapshot)
             {
-                _sock_snapshot->stop();
+                _M_sock_snapshot->stop();
             }
-            if(_sock_incremental_feed_a)
+            if(_M_sock_incremental_feed_a)
             {
-                _sock_incremental_feed_a->stop();
-            }
-            if(_sock_incremental_feed_b)
-            {
-                _sock_incremental_feed_b->stop();
+                _M_sock_incremental_feed_a->stop();
             }
         }
 
@@ -134,9 +106,9 @@ namespace b3::umdf
                 {
                     on_instrument_def_msg_received(buffer);
                 };
-                _sock_instrument_def = Socket::create_socket(_configuration.instrument_def.interface,
-                        _configuration.instrument_def.address,
-                        _configuration.instrument_def.port, notification);
+                _M_sock_instrument_definition = Socket::create_socket(_M_configuration.instrument_def.interface,
+                                                                      _M_configuration.instrument_def.address,
+                                                                      _M_configuration.instrument_def.port, notification);
             }
             {
                 auto notification = std::make_shared<io::socket::socket_notification<Buffer>>();
@@ -149,9 +121,9 @@ namespace b3::umdf
                     on_snapshot_msg_received(buffer);
                 };
 
-                _sock_snapshot = Socket::create_socket(_configuration.snapshot.interface,
-                        _configuration.snapshot.address,
-                        _configuration.snapshot.port, notification);
+                _M_sock_snapshot = Socket::create_socket(_M_configuration.snapshot.interface,
+                                                         _M_configuration.snapshot.address,
+                                                         _M_configuration.snapshot.port, notification);
             }
 
 
@@ -166,98 +138,97 @@ namespace b3::umdf
                     on_incremental_a_msg_received(buffer);
                 };
 
-                _sock_incremental_feed_a = Socket::create_socket(_configuration.feed_a.interface,
-                        _configuration.feed_a.address,
-                        _configuration.feed_a.port, notification);
+                _M_sock_incremental_feed_a = Socket::create_socket(_M_configuration.feed_a.interface,
+                                                                   _M_configuration.feed_a.address,
+                                                                   _M_configuration.feed_a.port, notification);
             }
-/*
-            {
-                auto notification = std::make_shared<io::socket::socket_notification<Buffer>>();
-                notification->on_error = [&](std::error_code ec) {
-                    on_error_socket(SocketType::Incremental_feed_b, ec);
-                };
 
-                notification->on_msg_received = [&](auto buffer)
-                {
-                    on_incremental_b_msg_received(buffer);
-                };
-
-                _sock_incremental_feed_b = Socket::create_socket(_configuration.feed_b.interface,
-                        _configuration.feed_b.address,
-                        _configuration.feed_b.port, notification);
-            }
-            */
-        }
-
-        void create_engine()
-        {
-                auto engine_notification = std::make_shared<b3::engine::engine_notification<Protocol<Buffer>>>();
-                engine_notification->on_incremental = [&](auto msg) {
-                    _notify->on_incremental(msg);
-                };
-
-                engine_notification->on_snapshot = [&](auto msg) {
-                    _notify->on_snapshot(msg);
-                };
-
-                engine_notification->on_instrument_def = [&](auto msg) {
-                    _notify->on_instrument_def(msg);
-                };
-
-                engine_notification->on_notification = [&](auto notify) {
-                    on_engine_notification(notify);
-                };
-
-                _engine = std::make_shared<Engine<Buffer>>(engine_notification);
-        }
-
-        void on_engine_notification(engine::NotificationType notification) {
-            switch (notification) {
-            case engine::NotificationType::InstrumentDefinition:{
-                std::cout << "Phase: Instrument Definition" << std::endl;
-                break;
-            }
-            case engine::NotificationType::Snapshot:{
-                std::cout << "Phase: Snapshot" << std::endl;
-                break;
-            }
-            case engine::NotificationType::Incremental:{
-                std::cout << "Phase: Incremental" << std::endl;
-                break;
-            }
-            case engine::NotificationType::IncrementalGap:{
-                std::cout << "Phase: Incremental Gap" << std::endl;
-                break;
-            }
-            case engine::NotificationType::IncrementalReset:{
-                std::cout << "Phase: Incremental Reset" << std::endl;
-                break;
-            }
-            case engine::NotificationType::IncrementalFullReset: {
-                std::cout << "Phase: Incremental Full Reset" << std::endl;
-                break;
-            }
-            }
+            _M_sock_instrument_definition->start();
+            _M_sock_snapshot->start();
+            _M_sock_incremental_feed_a->start();
         }
 
         void on_instrument_def_msg_received(std::shared_ptr<Buffer> buffer)
         {
-            _engine->instrument_def(buffer);
+            using namespace ::b3::channel;
+            auto ret = channel_engine::process_instrument_definition(buffer, _M_channel_status);
+            const auto& result = ret.first;
+
+            switch(result) {
+                case B3MsgResult::discard:
+                    _M_instrument_definition_container.clear();
+                    break;
+                case B3MsgResult::enqueue:
+                    _M_instrument_definition_container.emplace_back(std::move(ret.second.value()));
+                    break;
+                case B3MsgResult::send:
+                {
+                    for(const auto& value : _M_instrument_definition_container)
+                    {
+                        _M_notify->on_security_def(value);
+                    }
+                    _M_instrument_definition_container.clear();
+                    channel_engine::update_phase(_M_channel_status);
+                    _M_sock_instrument_definition->leave_group();
+                    std::cout << "Phase: Snapshot" << std::endl;
+                    break;
+                }
+                case B3MsgResult::sequencer:
+                case B3MsgResult::ok:
+                case B3MsgResult::incremental_trans:
+                case B3MsgResult::channel_reset:
+                case B3MsgResult::incremental_reset:
+                case B3MsgResult::gap:
+                case B3MsgResult::new_seq_version:
+                {
+                    break;
+                }
+            };
         }
 
-        void on_snapshot_msg_received(std::shared_ptr<Buffer> buffer)
+        void on_snapshot_msg_received(std::shared_ptr<Buffer> __buffer)
         {
-            _engine->snapshot(buffer);
+            using namespace ::b3::channel;
+            auto ret = channel_engine::proccess_snapshot(__buffer, _M_channel_status);
+            B3MsgResult result = ret.first;
+            switch(result) {
+                    //aqui vamos mandar o carrousel e atualizar o status
+                case B3MsgResult::discard:
+                {
+                    _M_snapshot_container.clear();
+                    break;
+                }
+                case B3MsgResult::enqueue:
+                {
+                    _M_snapshot_container.emplace_back(std::move(ret.second.value()));
+                    break;
+                }
+                case B3MsgResult::send:
+                {
+                    for(const auto& value : _M_snapshot_container)
+                    {
+                        _M_notify->on_snapshot(value);
+                    }
+                    _M_snapshot_container.clear();
+                    channel_engine::update_phase(_M_channel_status);
+                    std::cout << "Phase: Incremental" << std::endl;
+                    break;
+                }
+
+                case B3MsgResult::ok:
+                case B3MsgResult::new_seq_version:
+                case B3MsgResult::incremental_trans:
+                case B3MsgResult::incremental_reset:
+                case B3MsgResult::channel_reset:
+                case B3MsgResult::gap:
+                case B3MsgResult::sequencer:
+                    break;
+            };
         }
 
         void on_incremental_a_msg_received(std::shared_ptr<Buffer> buffer)
         {
-            _cache_feed_a->input(buffer);
-        }
-
-        void on_incremental_b_msg_received(std::shared_ptr<Buffer> buffer)
-        {
-            _cache_feed_b->input(buffer);
+            _M_cache_feed_a->input(buffer);
         }
 
         void on_error_socket([[maybe_unused]]SocketType socket, [[maybe_unused]]std::error_code &error)
@@ -268,56 +239,127 @@ namespace b3::umdf
 
         void dispatch_incremental()
         {
-            bool feed_a_is_ok;
-            bool feed_b_is_ok;
+            using namespace ::b3::channel;
 
-            while(_is_running)
+            while(_M_is_running)
             {
-                auto msg1 = _cache_feed_a->try_get_next();
+                auto msg1 = _M_cache_feed_a->try_get_next();
 
                 if(!msg1)
                 {
-                    feed_a_is_ok = true;
-                }
-                else
-                {
-                    feed_a_is_ok = _engine->incremental(msg1.value());
+                    continue;
                 }
 
-                auto msg2 = _cache_feed_b->try_get_next();
+                auto ret = channel_engine::process_incremental(msg1.value(), _M_channel_status);
+                B3MsgResult result = ret.first;
+                switch(result) {
 
-                if(!msg2) {
-                    feed_b_is_ok = true;
-                }
-                else
-                {
-                    feed_b_is_ok = _engine->incremental(msg2.value());
-                }
+                    case B3MsgResult::send: {
+                        _M_notify->on_incremental(ret.second.value());
+                        break;
+                    }
+                    case B3MsgResult::discard:
 
-                if(!feed_a_is_ok && !feed_b_is_ok)
-                {
-                    _engine->incremental_reset();
+                        break;
+                    case B3MsgResult::gap:
+                    {
+                        _M_sock_snapshot->resume();
+                        std::cout << "incremental gap" << std::endl;
+                        break;
+                    }
+                    case B3MsgResult::new_seq_version:
+                        std::cout << "incremental new seq version" << std::endl;
+                        break;
+                    case B3MsgResult::incremental_reset:
+                        std::cout << "Incremental reset" << std::endl;
+                        break;
+                    case B3MsgResult::enqueue:
+                    {
+                        _M_incremental_container.emplace_back(std::move(ret.second.value()));
+                        break;
+                    }
+                    case B3MsgResult::incremental_trans:
+                    {
+
+                        auto last_seqnum = _M_channel_status._M_incremental.seqnum;
+                        const auto& current_seqnum = ret.second.value().b3header->get_sequence_number();
+                        std::cout << "Incremental transition: queue: " << _M_incremental_container.size() << std::endl;
+                        std::cout << "Incremental transition: last seqnum: " << last_seqnum << std::endl;
+                        std::cout << "Incremental transition: current seqnum: " << current_seqnum << std::endl;
+
+                        if(!_M_incremental_container.empty())
+                        {
+                            const auto& size = _M_incremental_container.size() ;
+
+                            for(std::uint64_t i = 0; i < size; ++i)
+                            {
+                                const auto& value = _M_incremental_container[i];
+                                const auto& seqnum = value.b3header->get_sequence_number();
+
+                                if (last_seqnum >= seqnum) continue;
+
+                                if(last_seqnum == seqnum - 1)
+                                {
+                                    _M_notify->on_incremental(value);
+                                    ++last_seqnum;
+                                }
+                                else
+                                {
+                                    _M_channel_status._M_phase = Phase::Snapshot;
+                                    std::cout << "Gap no carrousel " << std::endl;
+                                    break;
+                                }
+                            }
+                            _M_incremental_container.clear();
+
+                            if(_M_channel_status._M_phase == Phase::Snapshot) break;
+                        }
+
+
+                        if (last_seqnum + 1 == current_seqnum)
+                        {
+                            _M_notify->on_incremental(ret.second.value());
+                            ++last_seqnum;
+                            _M_channel_status._M_phase = Phase::Incremental;
+                            _M_sock_snapshot->leave_group();
+                        }
+                        else if( last_seqnum < current_seqnum)
+                        {
+                            std::cout << "Gap na transição " << std::endl;
+                            std::cout << "Incremental transition: last seqnum: " << last_seqnum << std::endl;
+                            std::cout << "Incremental transition: current seqnum: " << current_seqnum << std::endl;
+                            std::cout << "Gap na transição " << std::endl;
+                            _M_channel_status._M_phase = Phase::Snapshot;
+                            break;
+                        }
+                        else
+                        {
+                            _M_channel_status._M_phase = Phase::Incremental;
+                            _M_sock_snapshot->leave_group();
+                        }
+                        break;
+                    }
+                    case B3MsgResult::channel_reset:
+                    {
+                        std::cout << "Channel Reset" << std::endl;
+                        break;
+                    }
                 }
             }
         }
 
-        thread_ptr _th_instrument_def;
-        thread_ptr _th_snapshot;
-        thread_ptr _th_incremental_feed_a;
-        thread_ptr _th_incremental_feed_b;
-        thread_ptr _th_dispatch_incremental;
-
-        std::shared_ptr<Socket> _sock_instrument_def;
-        std::shared_ptr<Socket> _sock_snapshot;
-        std::shared_ptr<Socket> _sock_incremental_feed_a;
-        std::shared_ptr<Socket> _sock_incremental_feed_b;
-        std::shared_ptr<memory::st_cache<std::shared_ptr<Buffer>>> _cache_feed_a;
-        std::shared_ptr<memory::st_cache<std::shared_ptr<Buffer>>> _cache_feed_b;
-        std::shared_ptr<Engine<Buffer>> _engine;
-        std::shared_ptr<channel_notification<Protocol<Buffer>>> _notify;
-
-        Config _configuration;
-        bool _is_running;
+        thread_ptr _M_th_dispatch_incremental;
+        std::shared_ptr<Socket> _M_sock_instrument_definition;
+        std::shared_ptr<Socket> _M_sock_snapshot;
+        std::shared_ptr<Socket> _M_sock_incremental_feed_a;
+        std::shared_ptr<memory::st_cache<std::shared_ptr<Buffer>>> _M_cache_feed_a;
+        std::shared_ptr<channel_notification> _M_notify;
+        b3::channel::channel_status _M_channel_status;
+        b3::channel_config _M_configuration;
+        bool _M_is_running;
+        std::vector<b3::protocol::sbe::message> _M_instrument_definition_container;
+        std::vector<b3::protocol::sbe::message> _M_snapshot_container;
+        std::vector<b3::protocol::sbe::message> _M_incremental_container;
     };
 }
 #endif //MARKET_DATA_CHANNEL_HPP

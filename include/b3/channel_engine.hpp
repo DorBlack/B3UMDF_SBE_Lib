@@ -29,12 +29,12 @@
 #include "b3/protocol/sbe_message.hpp"
 #include "types.h"
 
-namespace b3::umdf
+#include <utility>
+#include <optional>
+#include <atomic>
+
+namespace b3::channel
 {
-
-template<typename Buffer>
-struct umdf_b3_sbe_engine {
-
     enum class Phase {
         InstrumentDef,
         Snapshot,
@@ -42,11 +42,18 @@ struct umdf_b3_sbe_engine {
         Incremental
     };
 
-    enum class B3SeqNumResult {
-        Ok,
-        Discard,
-        Gap,
-        NewSeqVersion
+    enum class B3MsgResult {
+        ok,
+        discard,
+        gap,
+        incremental_reset,
+        incremental_trans,
+        ignore,
+        send,
+        sequencer,
+        new_seq_version,
+        channel_reset,
+        enqueue
     };
 
     struct carrousel_status {
@@ -61,356 +68,286 @@ struct umdf_b3_sbe_engine {
         uint64_t seqnum = 0x00;
     };
 
-    struct status {
-        carrousel_status instrument_def;
-        carrousel_status snapshot;
-        incremental_status incremental;
-        Phase _phase = Phase::InstrumentDef;
+    struct channel_status {
+        carrousel_status _M_instrument_definition;
+        carrousel_status _M_snapshot;
+        incremental_status _M_incremental;
+        std::atomic<Phase> _M_phase = {Phase::InstrumentDef };
     };
 
-    using protocol_type = protocol::sbe::message<Buffer>;
-    using notify_type = engine::engine_notification<protocol_type>;
-    using carrousel_container = std::vector<std::shared_ptr<protocol_type>>;
-    using incremental_container = std::vector<std::shared_ptr<protocol_type>>;
 
-
-    umdf_b3_sbe_engine(std::shared_ptr<notify_type> notify) : _notify(notify) {
-        _notify->on_notification(b3::engine::NotificationType::InstrumentDefinition);
-    }
-
-    void instrument_def(std::shared_ptr<Buffer> buffer) {
-        if(_current_status._phase != Phase::InstrumentDef)
-        {
-            return;
-        }
-        build_instrument_def_carrousel(buffer);
-    }
-
-    void snapshot(std::shared_ptr<Buffer> buffer) {
-        if(_current_status._phase != Phase::Snapshot)
-        {
-            return;
-        }
-        build_snapshot_carrousel(buffer);
-    }
-
-    bool incremental(std::shared_ptr<Buffer> buffer) {
-
-        return _incremental(buffer);
-    }
-
-    void incremental_reset() {
-
-    }
-
-private:
-
-    void build_instrument_def_carrousel(std::shared_ptr<Buffer> buffer)
+    class channel_engine
     {
-        std::shared_ptr<protocol_type> current_msg = nullptr;
-        current_msg = protocol_type::create_message(buffer);
-        auto b3ret = carrousel_check(_current_status.instrument_def, current_msg);
+        using ProtocolType = protocol::sbe::message;
+        using BufferType_Sptr = std::shared_ptr<memory::buffer>;
+        using ReturnType = std::pair<B3MsgResult, std::optional<ProtocolType>>;
 
-        switch (b3ret) {
-        case B3SeqNumResult::Ok: {
-            if(current_msg->body[0]->header->templateId() == SequenceReset_1::SBE_TEMPLATE_ID)
-            {
-                if(_current_status.instrument_def.report != _current_status.instrument_def.tot_report)
-                {
-                    //TODO Error
-                    std::cout << "report coutn error " << _current_status.instrument_def.report << " : " << _current_status.instrument_def.tot_report << std::endl;
-                }
+    public:
 
-                for(auto value : _storage_instrument_def)
-                {
-                    _notify->on_instrument_def(value);
-                }
-                _storage_instrument_def.clear();
-                _current_status.instrument_def.report = 0x00;
-                _current_status.instrument_def.tot_report = 0x00;
-                _current_status._phase = Phase::Snapshot;
-                _notify->on_notification(b3::engine::NotificationType::Snapshot);
+        static void update_phase(channel_status& __ch_status)
+        {
+            const auto& phase = __ch_status._M_phase;
+            switch (phase) {
+
+                case Phase::InstrumentDef:
+                    __ch_status._M_phase = Phase::Snapshot;
+                    break;
+                case Phase::Snapshot:
+                    __ch_status._M_phase = Phase::IncrementalTrans;
+                    break;
+                case Phase::Incremental:
+                case Phase::IncrementalTrans:
+                    __ch_status._M_phase = Phase::Incremental;
+                    break;
             }
-            else
+        }
+
+        static inline ReturnType  process_instrument_definition(BufferType_Sptr __buffer, channel_status& __ch_status)
+        {
+            if(__ch_status._M_phase != Phase::InstrumentDef)
             {
-                for(auto msg : current_msg->body)
-                {
-                    ++_current_status.instrument_def.report;
-                }
-                _storage_instrument_def.emplace_back(current_msg);
+                return { B3MsgResult::ignore, std::nullopt };
             }
-            break;
-        }
-        case B3SeqNumResult::Gap: {
-            _storage_instrument_def.clear();
-            _current_status.instrument_def.version = 0x00;
-            _current_status.instrument_def.seqnum = 0x00;
-        }
-        case B3SeqNumResult::NewSeqVersion: {
-            _storage_instrument_def.clear();
-            if(current_msg->body[0]->header->templateId() != SecurityDefinition_4::SBE_TEMPLATE_ID)
+
+            auto msg = ProtocolType(__buffer);
+
+            if(msg.body[0]->header->templateId() == Sequence_2::SBE_TEMPLATE_ID)
             {
-                //TODO: Error a primeira mesagem deveria ser essa
+                return {B3MsgResult::ignore, std::move(msg)};
             }
-            auto ptr = std::get_if<SecurityDefinition_4>(&current_msg->body[0]->body);
-            _current_status.instrument_def.tot_report = ptr->totNoRelatedSym();
-            _current_status.instrument_def.report = 0x00;
 
-            for(auto msg : current_msg->body)
-            {
-                ++_current_status.instrument_def.report;
-            }
-            _storage_instrument_def.emplace_back(current_msg);
+            auto b3ret = carrousel_check(__ch_status._M_instrument_definition, msg);
 
-            break;
-        }
-        default: break;
-        }
-    }
-
-    void build_snapshot_carrousel(std::shared_ptr<Buffer> buffer) {
-
-        std::shared_ptr<protocol_type> current_msg = nullptr;
-        current_msg = protocol_type::create_message(buffer);
-        auto b3ret = carrousel_check(_current_status.snapshot, current_msg);
-
-        switch (b3ret) {
-        case B3SeqNumResult::Discard: {
-            _storage_snapshot.clear();
-            _current_status.snapshot.report = 0x00;
-            _current_status.snapshot.tot_report = 0x00;
-            break;
-        }
-        case B3SeqNumResult::Ok: {
-
-            if(current_msg->body[0]->header->templateId() == SequenceReset_1::SBE_TEMPLATE_ID)
-            {
-                if(_current_status.snapshot.report != _current_status.snapshot.tot_report)
-                {
-                    std::cout << "total report error snapshot: tot = " << _current_status.snapshot.tot_report << " : " << _current_status.snapshot.report << std::endl;
-                }
-
-                for(auto value : _storage_snapshot)
-                {
-                    _notify->on_snapshot(value);
-                }
-                _current_status.snapshot.report = 0x00;
-                _current_status.snapshot.tot_report = 0x00;
-                _current_status._phase = Phase::IncrementalTrans;
-                std::cout << "snapshot last seqnum " << _current_status.incremental.seqnum << std::endl;
-                _notify->on_notification(b3::engine::NotificationType::Incremental);
-            }
-            else
-            {
-                for(auto msg : current_msg->body)
-                {
-                    if(msg->header->templateId() == SnapshotFullRefresh_Header_30::SBE_TEMPLATE_ID)
+            switch (b3ret) {
+                case B3MsgResult::ok: {
+                    if(msg.body[0]->header->templateId() == SequenceReset_1::SBE_TEMPLATE_ID)
                     {
-                        auto ptr = std::get_if<SnapshotFullRefresh_Header_30>(&(msg->body));
-                        _current_status.incremental.seqnum = ptr->lastMsgSeqNumProcessed();
-                        _current_status.snapshot.tot_report = ptr->totNumReports();
-                        ++_current_status.snapshot.report;
+                        if(__ch_status._M_instrument_definition.report != __ch_status._M_instrument_definition.tot_report)
+                        {
+                            b3ret = B3MsgResult::discard;
+                        }
+                        else
+                        {
+                            __ch_status._M_instrument_definition.report = 0x00;
+                            __ch_status._M_instrument_definition.tot_report = 0x00;
+                            b3ret = B3MsgResult::send;
+                        }
                     }
-
-                }
-                _storage_snapshot.emplace_back(current_msg);
-            }
-           break;
-        }
-        case B3SeqNumResult::NewSeqVersion: {
-            _storage_snapshot.clear();
-            _current_status.snapshot.report = 0x00;
-
-            for(auto msg : current_msg->body)
-            {
-                if(msg->header->templateId() == SnapshotFullRefresh_Header_30::SBE_TEMPLATE_ID)
-                {
-                    auto ptr = std::get_if<SnapshotFullRefresh_Header_30>(&current_msg->body[0]->body);
-                    _current_status.snapshot.tot_report = ptr->totNumReports();
-                    _current_status.incremental.seqnum = ptr->lastMsgSeqNumProcessed();
-                    ++_current_status.snapshot.report;
-                }
-            }
-            _storage_snapshot.emplace_back(current_msg);
-            break;
-        }
-        case B3SeqNumResult::Gap: {
-            _storage_snapshot.clear();
-            _current_status.snapshot.report = 0x00;
-            _current_status.snapshot.tot_report = 0x00;
-            break;
-        }
-        }
-    }
-
-    bool _incremental(std::shared_ptr<Buffer> buffer) {
-        auto ret = true;
-        if(_current_status._phase == Phase::InstrumentDef)
-        {
-            return ret;
-        }
-
-        std::shared_ptr<protocol_type> current_msg = nullptr;
-        current_msg = protocol_type::create_message(buffer);
-
-        if(current_msg->body[0]->header->templateId() == Sequence_2::SBE_TEMPLATE_ID)
-        {
-            return ret;
-        }
-
-        if(current_msg->body[0]->header->templateId() == SequenceReset_1::SBE_TEMPLATE_ID)
-        {
-            _notify->on_incremental(current_msg);
-            _storage_incremental.clear();
-            _notify->on_notification(engine::NotificationType::IncrementalReset);
-            _current_status._phase = Phase::Snapshot;
-            _notify->on_notification(engine::NotificationType::Snapshot);
-            return ret;
-        }
-
-        if(current_msg->body[0]->header->templateId() == ChannelReset_11::SBE_TEMPLATE_ID)
-        {
-            _notify->on_incremental(current_msg);
-            _storage_incremental.clear();
-            _notify->on_notification(engine::NotificationType::IncrementalFullReset);
-            _current_status._phase = Phase::InstrumentDef;
-            _notify->on_notification(engine::NotificationType::InstrumentDefinition);
-            return ret;
-        }
-
-        if(_current_status._phase == Phase::Snapshot)
-        {
-            _storage_incremental.push_back(current_msg);
-            return ret;
-        }
-
-        if(_current_status._phase == Phase::IncrementalTrans) {
-            std::cout << "Send Enqueued Tot: "  << _storage_incremental.size() << std::endl;
-            for(auto msg : _storage_incremental)
-            {
-                if(_current_status._phase == Phase::Snapshot)
-                {
-                    continue;
-                }
-                auto b3ret = incremental_check(current_msg);
-
-                switch (b3ret) {
-                case B3SeqNumResult::Ok: {
-                    _notify->on_incremental(current_msg);
+                    else
+                    {
+                        __ch_status._M_instrument_definition.report += msg.body.size();
+                        b3ret = B3MsgResult::enqueue;
+                    }
                     break;
                 }
-                case B3SeqNumResult::Discard: {
-                    ret = true;
+                case B3MsgResult::discard:
+                case B3MsgResult::gap: {
+                    __ch_status._M_instrument_definition.version = 0x00;
+                    __ch_status._M_instrument_definition.seqnum = 0x00;
+                    b3ret = B3MsgResult::discard;
                     break;
                 }
-                case B3SeqNumResult::Gap: {
-                    std::cout << "Gap last seqnum: " << current_msg->b3header->get_sequence_number() << std::endl;
-                    _notify->on_notification(engine::NotificationType::IncrementalGap);
-                    _current_status._phase = Phase::Snapshot;
-                    _notify->on_notification(engine::NotificationType::Snapshot);
-                    ret = false;
+                case B3MsgResult::new_seq_version: {
+                    auto ptr = std::get_if<SecurityDefinition_4>(&msg.body[0]->body);
+                    __ch_status._M_instrument_definition.tot_report = ptr->totNoRelatedSym();
+                    __ch_status._M_instrument_definition.report = 0x00;
+                    __ch_status._M_instrument_definition.report += msg.body.size();
+                    b3ret = B3MsgResult::enqueue;
                     break;
                 }
-                }
+                default: break;
             }
-            _storage_incremental.clear();
-            _current_status._phase = Phase::Incremental;
-        }
-        //first msg processed
-        if(_current_status.incremental.version == 0x00)
-        {
-            _current_status.incremental.version = current_msg->b3header->get_sequence_version();
+
+            return {b3ret, std::move(msg)};
         }
 
-        if(_current_status.incremental.version != current_msg->b3header->get_sequence_version())
-        {
-            _storage_incremental.clear();
-            _notify->on_notification(engine::NotificationType::IncrementalFullReset);
-            _current_status._phase = Phase::InstrumentDef;
-            _notify->on_notification(engine::NotificationType::InstrumentDefinition);
-            //TODO tem que mandar uma msg informando o cliente para limpar tudo que deu ruim.
-        }
+        static inline ReturnType proccess_snapshot(BufferType_Sptr __buffer, channel_status& __ch_status) {
 
-        auto b3ret = incremental_check(current_msg);
-
-        switch (b3ret) {
-        case B3SeqNumResult::Ok: {
-            _notify->on_incremental(current_msg);
-            break;
-        }
-        case B3SeqNumResult::Discard: {
-            ret = true;
-            break;
-        }
-        case B3SeqNumResult::Gap: {
-            _notify->on_notification(engine::NotificationType::IncrementalGap);
-            _current_status._phase = Phase::Snapshot;
-            _notify->on_notification(engine::NotificationType::Snapshot);
-            ret = false;
-            break;
-        }
-        }
-        return ret;
-    }
-
-    B3SeqNumResult incremental_check(std::shared_ptr<protocol_type> msg) {
-
-        auto seq_num = msg->b3header->get_sequence_number();
-
-        B3SeqNumResult ret = B3SeqNumResult::Discard;
-
-        if( seq_num - 1 == _current_status.incremental.seqnum)
-        {
-            ++_current_status.incremental.seqnum;
-            ret = B3SeqNumResult::Ok;
-        }
-        else if( seq_num - 1 > _current_status.incremental.seqnum)
-        {
-            ret = B3SeqNumResult::Gap;
-        }
-
-        return ret;
-    }
-
-    B3SeqNumResult carrousel_check(carrousel_status& status,  std::shared_ptr<protocol_type> msg) {
-
-        B3SeqNumResult ret = B3SeqNumResult::Ok;
-
-        if(status.version != msg->b3header->get_sequence_version())
-        {
-            if(msg->b3header->get_sequence_number() == 1)
+            if(__ch_status._M_phase != Phase::Snapshot)
             {
-                ret = B3SeqNumResult::NewSeqVersion;
-                status.version = msg->b3header->get_sequence_version();
-                status.seqnum = 1;
+                return {B3MsgResult::ignore, std::nullopt};
+            }
+
+            auto msg = ProtocolType (__buffer);
+
+            if(msg.body[0]->header->templateId() == Sequence_2::SBE_TEMPLATE_ID)
+            {
+                return {B3MsgResult::ignore, std::move(msg)};
+            }
+
+            auto b3ret = carrousel_check(__ch_status._M_snapshot, msg);
+
+            switch (b3ret) {
+                case B3MsgResult::gap:
+                case B3MsgResult::discard: {
+                    __ch_status._M_snapshot.report = 0x00;
+                    __ch_status._M_snapshot.tot_report = 0x00;
+                    break;
+                }
+                case B3MsgResult::ok: {
+                    if(msg.body[0]->header->templateId() == SequenceReset_1::SBE_TEMPLATE_ID)
+                    {
+                        if(__ch_status._M_snapshot.report != __ch_status._M_snapshot.tot_report)
+                        {
+                            std::cout << "invalid snapshot faltando mensagem" << std::endl;
+                            b3ret = B3MsgResult::discard;
+                        }
+                        else
+                        {
+                            __ch_status._M_snapshot.report = 0x00;
+                            __ch_status._M_snapshot.tot_report = 0x00;
+                            b3ret = B3MsgResult::send;
+                        }
+                    }
+                    else
+                    {
+                        for(const auto& value : msg.body)
+                        {
+                            if(value->header->templateId() == SnapshotFullRefresh_Header_30::SBE_TEMPLATE_ID)
+                            {
+                                auto ptr = std::get_if<SnapshotFullRefresh_Header_30>(&(value->body));
+                                __ch_status._M_incremental.seqnum = ptr->lastMsgSeqNumProcessed();
+                                __ch_status._M_snapshot.tot_report = ptr->totNumReports();
+                                ++__ch_status._M_snapshot.report;
+                            }
+                        }
+                        b3ret = B3MsgResult::enqueue;
+                    }
+                    break;
+                }
+                case B3MsgResult::new_seq_version : {
+                    __ch_status._M_snapshot.report = 0x00;
+
+                    for(const auto& value : msg.body)
+                    {
+                        if(value->header->templateId() == SnapshotFullRefresh_Header_30::SBE_TEMPLATE_ID)
+                        {
+                            auto ptr = std::get_if<SnapshotFullRefresh_Header_30>(&value->body);
+                            __ch_status._M_snapshot.tot_report = ptr->totNumReports();
+                            __ch_status._M_incremental.seqnum = ptr->lastMsgSeqNumProcessed();
+                            ++__ch_status._M_snapshot.report;
+                        }
+                    }
+                    b3ret = B3MsgResult::enqueue;
+                    break;
+                }
+                case B3MsgResult::incremental_reset:
+                case B3MsgResult::incremental_trans:
+                case B3MsgResult::channel_reset:
+                case B3MsgResult::enqueue:
+                case B3MsgResult::ignore:
+                case B3MsgResult::send:
+                case B3MsgResult::sequencer:
+                    break;
+            }
+
+            return { b3ret, std::move(msg)};
+        }
+
+        static inline ReturnType process_incremental(BufferType_Sptr __buffer, channel_status& __ch_status) {
+
+            if(__ch_status._M_phase == channel::Phase::InstrumentDef)
+            {
+                return {B3MsgResult::discard, std::nullopt};
+            }
+
+            auto msg = ProtocolType(__buffer);
+
+            if(msg.body[0]->header->templateId() == Sequence_2::SBE_TEMPLATE_ID)
+            {
+                return {B3MsgResult::discard, std::move(msg)};
+            }
+
+            if(msg.body[0]->header->templateId() == SequenceReset_1::SBE_TEMPLATE_ID)
+            {
+                __ch_status._M_phase = channel::Phase::Snapshot;
+                __ch_status._M_incremental.version = 0x00;
+                __ch_status._M_incremental.seqnum= 0x00;
+                return {B3MsgResult::incremental_reset, std::move(msg)};
+            }
+
+            if(msg.body[0]->header->templateId() == ChannelReset_11::SBE_TEMPLATE_ID)
+            {
+                __ch_status._M_phase = channel::Phase::InstrumentDef;
+                __ch_status._M_incremental.version = 0x00;
+                __ch_status._M_incremental.seqnum= 0x00;
+                return {B3MsgResult::channel_reset, std::move(msg)};
+            }
+
+            if(__ch_status._M_phase == channel::Phase::Snapshot)
+            {
+                return {B3MsgResult::enqueue, std::move(msg)};
+            }
+
+            if(__ch_status._M_phase == channel::Phase::IncrementalTrans) {
+               return {B3MsgResult::incremental_trans, std::move(msg)};
+            }
+            //first msg processed
+            if(__ch_status._M_incremental.version == 0x00)
+            {
+                __ch_status._M_incremental.version = msg.b3header->get_sequence_version();
+            }
+
+            if(__ch_status._M_incremental.version != msg.b3header->get_sequence_version())
+            {
+                __ch_status._M_incremental.version = 0x00;
+                __ch_status._M_incremental.seqnum = 0x00;
+                __ch_status._M_phase = Phase::Snapshot;
+                return {B3MsgResult::channel_reset, std::move(msg)};
+            }
+
+            auto seq_num = msg.b3header->get_sequence_number();
+
+            if( seq_num - 1 == __ch_status._M_incremental.seqnum)
+            {
+                ++__ch_status._M_incremental.seqnum;
+                return {B3MsgResult::send, std::move(msg)};
+            }
+            else if( seq_num - 1 > __ch_status._M_incremental.seqnum)
+            {
+                __ch_status._M_incremental.seqnum = 0x00;
+                __ch_status._M_phase = Phase::Snapshot;
+                return {B3MsgResult::gap, std::move(msg)};
             }
             else
             {
-                ret = B3SeqNumResult::Discard;
+                return {B3MsgResult::discard, std::move(msg)};
             }
         }
-        else if(msg->b3header->get_sequence_number() - 1 >  status.seqnum)
-        {
-            ret = B3SeqNumResult::Gap;
-        }
-        else if (msg->b3header->get_sequence_number() - 1 < status.seqnum)
-        {
-            ret = B3SeqNumResult::Discard;
-        }
-        else
-        {
-            ++status.seqnum;
-        }
 
-        return ret;
-    }
+    private:
+        static inline B3MsgResult carrousel_check(channel::carrousel_status& __status,  const ProtocolType& msg) {
 
-    status _current_status;
-    std::shared_ptr<notify_type> _notify;
-    carrousel_container _storage_snapshot;
-    carrousel_container _storage_instrument_def;
-    incremental_container _storage_incremental;
-};
+            B3MsgResult ret = B3MsgResult::ok;
+
+            if(__status.version != msg.b3header->get_sequence_version())
+            {
+                if(msg.b3header->get_sequence_number() == 1)
+                {
+                    ret = B3MsgResult::new_seq_version;
+                    __status.version = msg.b3header->get_sequence_version();
+                    __status.seqnum = 1;
+                }
+                else
+                {
+                    ret = B3MsgResult::discard;
+                }
+            }
+            else if(msg.b3header->get_sequence_number() - 1 >  __status.seqnum)
+            {
+                ret = B3MsgResult::gap;
+            }
+            else if (msg.b3header->get_sequence_number() - 1 < __status.seqnum)
+            {
+                ret = B3MsgResult::discard;
+            }
+            else
+            {
+                ++__status.seqnum;
+            }
+
+            return ret;
+        }
+    };
 }
-
 #endif //MARKET_DATA_CHANNEL_ENGINE_HPP

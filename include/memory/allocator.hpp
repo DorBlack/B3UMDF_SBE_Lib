@@ -97,18 +97,19 @@ class allocator
 public:
     allocator() {
         _M_mask = _S_default_size - 1;
-        _M_memory_data = _allocate(_S_default_size);
     }
 
     [[nodiscard]] _Basic_block* allocate(std::size_t __size) {
         if(_M_memory_data == nullptr || (_M_head - _M_tail >= _M_mask))
         {
+           std::cout << "full queue" << std::endl;
             throw std::bad_array_new_length();
         }
         _Basic_block* _ret = &(_M_memory_data[_M_head & _M_mask]);
 
         if(_ret->in_using())
         {
+            std::cout << "erro no algo" << std::endl;
             throw std::bad_array_new_length();
         }
 
@@ -183,7 +184,7 @@ public:
                   << reinterpret_cast<void*>(p) << std::dec << '\n';
     }
 
-    _Basic_block *_M_memory_data = nullptr;
+    _Basic_block _M_memory_data[_S_default_size];
     std::uint64_t _M_head = 0;
     std::uint64_t _M_tail = 0;
     std::uint64_t _M_mask = 0;

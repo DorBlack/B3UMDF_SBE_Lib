@@ -33,7 +33,9 @@ namespace memory
 {
     struct buffer
     {
-        buffer() = delete;
+        buffer() : _M_unique_ptr(new _Basic_block()){
+           _M_block_memory = _M_unique_ptr.get();
+        }
 
         buffer(allocator* __alloc, _Basic_block* __block) :
                 _M_allocator(__alloc),
@@ -71,12 +73,16 @@ namespace memory
 
         inline const void release() const
         {
-            _M_allocator->deallocate(_M_block_memory, 1);
+            if(_M_unique_ptr == nullptr)
+            {
+                _M_allocator->deallocate(_M_block_memory, 1);
+            }
         }
 
     private:
         _Basic_block *_M_block_memory;
         allocator* _M_allocator;
+        std::unique_ptr<_Basic_block> _M_unique_ptr;
     };
 } // namespace udp
 #endif //MARKET_DATA_BUFFER_HPP

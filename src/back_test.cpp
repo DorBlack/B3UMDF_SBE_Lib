@@ -58,14 +58,15 @@ int main(int argc, char** argv)
     double results[3000];
     double msgs[3000];
 
-    auto output = std::make_shared<b3::umdf::sbe::channel_notification>();
+    auto output = std::make_shared<b3::umdf::channel_notification>();
 
-    output->on_security_def = [&](auto msg) {
+    output->on_security_def = [&](const auto& msg) {
     };
-    output->on_incremental = [&](auto msg) {
+    output->on_incremental = [&](const auto& msg) {
+        /*
         clock_gettime(CLOCK_MONOTONIC, &_timer);
-        results[index] =  _timer.tv_nsec - msg->get_created_time_nano() ;
-        msgs[index] = msg->body_size;
+        results[index] =  _timer.tv_nsec - msg.get_created_time_nano() ;
+        msgs[index] = msg.body_size;
         if(++index == 3000)
         {
             for(int i = 0; i < index; ++i)
@@ -73,12 +74,12 @@ int main(int argc, char** argv)
                 std::cout << i <<","<< results[i] << "," << msgs[i] << "," << results[i] / msgs[i] << std::endl;
             }
             index = 0;
-        }
+        }*/
     };
-    output->on_snapshot = [&](auto msg) {
+    output->on_snapshot = [&](const auto& msg) {
     };
 
-    auto config = b3::engine::channel_config();
+    auto config = b3::channel_config();
 
     config.instrument_def.address = "233.252.8.5";
     config.instrument_def.port = 30001;
@@ -91,10 +92,17 @@ int main(int argc, char** argv)
     config.feed_a.interface = "0.0.0.0";
 
     auto channel = b3::umdf::sbe::multicast_channel(config, output);
-    channel.start();
+    try
+    {
+        channel.start();
 
-    std::cout << "press any key to stop" << std::endl;
-    int i = 0;
-    std::cin >> i;
+        std::cout << "press any key to stop" << std::endl;
+        int i = 0;
+        std::cin >> i;
+    }catch(...)
+    {
+        std::cout << "alguma expcetion" << std::endl;
+    }
+
     return 0;
 }
