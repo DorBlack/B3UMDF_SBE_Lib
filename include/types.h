@@ -9,15 +9,36 @@
 #include <functional>
 #include "b3/protocol/sbe_message.hpp"
 
-namespace b3::umdf
-{
-    struct channel_notification {
-        using ProtocolType = b3::protocol::sbe::message;
-        std::function<void(const ProtocolType&)> on_incremental;
-        std::function<void(const ProtocolType&)> on_snapshot;
-        std::function<void(const ProtocolType&)> on_security_def;
-    };
-}
+using SbeMessage = std::variant<
+        SequenceReset_1,
+        Sequence_2,
+        SecurityStatus_3,
+        SecurityGroupPhase_10,
+        SecurityDefinition_4,
+        News_5,
+        EmptyBook_9,
+        ChannelReset_11,
+        OpeningPrice_15,
+        TheoreticalOpeningPrice_16,
+        ClosingPrice_17,
+        AuctionImbalance_19,
+        PriceBand_20,
+        QuantityBand_21,
+        HighPrice_24,
+        LowPrice_25,
+        LastTradePrice_27,
+        SnapshotFullRefresh_Header_30,
+        Order_MBO_50,
+        DeleteOrder_MBO_51,
+        MassDeleteOrders_MBO_52,
+        Trade_53,
+        ForwardTrade_54,
+        ExecutionSummary_55,
+        ExecutionStatistics_56,
+        TradeBust_57,
+        SnapshotFullRefresh_Orders_MBO_71
+>;
+
 
 namespace io::socket
 {

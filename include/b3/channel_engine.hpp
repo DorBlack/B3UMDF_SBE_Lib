@@ -26,21 +26,14 @@
 #ifndef MARKET_DATA_CHANNEL_ENGINE_HPP
 #define MARKET_DATA_CHANNEL_ENGINE_HPP
 
-#include "b3/protocol/sbe_message.hpp"
-#include "types.h"
-
 #include <utility>
 #include <optional>
 #include <atomic>
 
-namespace b3::channel
-{
-    enum class Phase {
-        InstrumentDef,
-        Snapshot,
-        IncrementalTrans,
-        Incremental
-    };
+#include "protocol/sbe_message.hpp"
+
+namespace b3::channel {
+
 
     enum class B3MsgResult {
         ok,
@@ -56,24 +49,9 @@ namespace b3::channel
         enqueue
     };
 
-    struct carrousel_status {
-        int32_t version = 0x00;
-        int32_t seqnum = 0x00;
-        uint32_t report = 0x00;
-        uint32_t tot_report = 0x00;
-    };
 
-    struct incremental_status {
-        int32_t version = 0x00;
-        uint64_t seqnum = 0x00;
-    };
 
-    struct channel_status {
-        carrousel_status _M_instrument_definition;
-        carrousel_status _M_snapshot;
-        incremental_status _M_incremental;
-        std::atomic<Phase> _M_phase = {Phase::InstrumentDef };
-    };
+    /*
 
 
     class channel_engine
@@ -102,64 +80,7 @@ namespace b3::channel
             }
         }
 
-        static inline ReturnType  process_instrument_definition(BufferType_Sptr __buffer, channel_status& __ch_status)
-        {
-            if(__ch_status._M_phase != Phase::InstrumentDef)
-            {
-                return { B3MsgResult::ignore, std::nullopt };
-            }
 
-            auto msg = ProtocolType(__buffer);
-
-            if(msg.body[0]->header->templateId() == Sequence_2::SBE_TEMPLATE_ID)
-            {
-                return {B3MsgResult::ignore, std::move(msg)};
-            }
-
-            auto b3ret = carrousel_check(__ch_status._M_instrument_definition, msg);
-
-            switch (b3ret) {
-                case B3MsgResult::ok: {
-                    if(msg.body[0]->header->templateId() == SequenceReset_1::SBE_TEMPLATE_ID)
-                    {
-                        if(__ch_status._M_instrument_definition.report != __ch_status._M_instrument_definition.tot_report)
-                        {
-                            b3ret = B3MsgResult::discard;
-                        }
-                        else
-                        {
-                            __ch_status._M_instrument_definition.report = 0x00;
-                            __ch_status._M_instrument_definition.tot_report = 0x00;
-                            b3ret = B3MsgResult::send;
-                        }
-                    }
-                    else
-                    {
-                        __ch_status._M_instrument_definition.report += msg.body.size();
-                        b3ret = B3MsgResult::enqueue;
-                    }
-                    break;
-                }
-                case B3MsgResult::discard:
-                case B3MsgResult::gap: {
-                    __ch_status._M_instrument_definition.version = 0x00;
-                    __ch_status._M_instrument_definition.seqnum = 0x00;
-                    b3ret = B3MsgResult::discard;
-                    break;
-                }
-                case B3MsgResult::new_seq_version: {
-                    auto ptr = std::get_if<SecurityDefinition_4>(&msg.body[0]->body);
-                    __ch_status._M_instrument_definition.tot_report = ptr->totNoRelatedSym();
-                    __ch_status._M_instrument_definition.report = 0x00;
-                    __ch_status._M_instrument_definition.report += msg.body.size();
-                    b3ret = B3MsgResult::enqueue;
-                    break;
-                }
-                default: break;
-            }
-
-            return {b3ret, std::move(msg)};
-        }
 
         static inline ReturnType proccess_snapshot(BufferType_Sptr __buffer, channel_status& __ch_status) {
 
@@ -349,5 +270,7 @@ namespace b3::channel
             return ret;
         }
     };
+
+     */
 }
 #endif //MARKET_DATA_CHANNEL_ENGINE_HPP

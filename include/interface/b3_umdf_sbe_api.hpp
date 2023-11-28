@@ -35,7 +35,7 @@ namespace b3::umdf::sbe {
 class multicast_channel {
 public:
     using SocketType = io::socket::udp_multicast;
-    using ChannelType = b3::umdf::channel<SocketType>;
+    //using ChannelType = b3::umdf::channel<SocketType>;
 
     multicast_channel(b3::channel_config& __config,
                       std::shared_ptr<channel_notification> __notify) :
@@ -45,16 +45,16 @@ public:
     void start()
     {
         create_channel();
-        _M_channel->start();
+    //    _M_channel->start();
     }
 private:
     void create_channel()
     {
-        _M_channel = std::make_shared<ChannelType>(_M_config, _M_notify);
+        //_M_channel = std::make_shared<ChannelType>(_M_config, _M_notify);
     }
 
     const b3::channel_config& _M_config;
-    std::shared_ptr<ChannelType> _M_channel;
+    //std::shared_ptr<ChannelType> _M_channel;
     std::shared_ptr<channel_notification> _M_notify;
 };
 }

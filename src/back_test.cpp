@@ -23,33 +23,9 @@
 // Created by scien on 06/11/2023.
 //
 
-#include "interface/b3_umdf_sbe_api.hpp"
 #include <iostream>
+#include "b3/channel.hpp"
 #include "time.h"
-
-int correction_factor = 0x00;
-
-void warm_up()
-{
-	std::cout << "check delay get_current_time in nano" << std::endl;
-    struct timespec _timer;
-    clock_gettime(CLOCK_MONOTONIC, &_timer);
-    double init = _timer.tv_nsec;
-    double x = init;
-    double diff = 0;
-    for(int i = 0; i < 10000; ++i)
-    {
-      clock_gettime(CLOCK_MONOTONIC, &_timer);
-      diff = _timer.tv_nsec - x;
-      x = _timer.tv_nsec;
-    }
-
-    clock_gettime(CLOCK_MONOTONIC, &_timer);
-    double end = _timer.tv_nsec;
-    correction_factor = (end - init) / 10000 ;
-    std::cout << " fator de correcao "  << correction_factor << " ns"<< std::endl;
-
-}
 
 int main(int argc, char** argv)
 {
@@ -58,11 +34,11 @@ int main(int argc, char** argv)
     double results[3000];
     double msgs[3000];
 
-    auto output = std::make_shared<b3::umdf::channel_notification>();
+    auto output = std::make_shared<b3::umdf::channel::channel_notification>();
 
-    output->on_security_def = [&](const auto& msg) {
+    output->on_security_def = [&](const uint32_t __template_id, const SbeMessage& __msg) {
     };
-    output->on_incremental = [&](const auto& msg) {
+    output->on_incremental = [&](const uint32_t __template_id, const SbeMessage& __msg) {
         /*
         clock_gettime(CLOCK_MONOTONIC, &_timer);
         results[index] =  _timer.tv_nsec - msg.get_created_time_nano() ;
@@ -76,25 +52,29 @@ int main(int argc, char** argv)
             index = 0;
         }*/
     };
-    output->on_snapshot = [&](const auto& msg) {
+    output->on_snapshot = [&](const uint32_t __template_id, const SbeMessage& __msg) {
     };
 
     auto config = b3::channel_config();
 
     config.instrument_def.address = "233.252.8.5";
     config.instrument_def.port = 30001;
-    config.instrument_def.interface = "0.0.0.0";
+    config.instrument_def.interface = "enp4s0";
     config.snapshot.address = "233.252.8.6";
     config.snapshot.port = 30002;
-    config.snapshot.interface = "0.0.0.0";
+    config.snapshot.interface = "enp4s0";
     config.feed_a.address = "233.252.8.7";
     config.feed_a.port = 30003;
-    config.feed_a.interface = "0.0.0.0";
+    config.feed_a.interface = "enp4s0";
 
-    auto channel = b3::umdf::sbe::multicast_channel(config, output);
+    auto channel = b3::umdf::channel(config, output);
+
     try
     {
-        channel.start();
+        if(!channel.start())
+        {
+            std::cout << "error join " << std::endl;
+        }
 
         std::cout << "press any key to stop" << std::endl;
         int i = 0;
