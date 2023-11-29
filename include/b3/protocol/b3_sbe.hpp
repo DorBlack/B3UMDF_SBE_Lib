@@ -6,6 +6,7 @@
 #define UMDF_B3_SBE_B3_SBE_HPP
 
 #include <cinttypes>
+#include <optional>
 
 struct b3_header
 {
@@ -41,8 +42,8 @@ struct b3_packet
     b3_packet(char *__data, uint32_t __len) : data(__data), len(__len) {
         header = (b3_header *)((uint8_t *)data);
         current_sbe_packet = (b3_packet_body_hdr* )((uint8_t*)data + sizeof(b3_header));
-        offset = sizeof(b3_header);
         sbe_body = __data + sizeof(b3_header) + sizeof(b3_packet_body_hdr);
+        offset = sizeof(b3_header) + sizeof(b3_packet_body_hdr);
     }
 
     b3_header* header;
@@ -60,9 +61,10 @@ static Ty get_sbe_message(const b3_packet* __packet)
     msg.wrapForDecode(__packet->sbe_body, 0,
                       __packet->current_sbe_packet->sbe_msg_hdr.block_length,
                       __packet->current_sbe_packet->sbe_msg_hdr.schema_version,
-                      (__packet->len - (__packet->offset + sizeof(b3_packet_body_hdr))));
+                      (__packet->len - __packet->offset));
     return msg;
 }
+
 
 static uint32_t get_sbe_body_len(const b3_packet* __packet)
 {
@@ -90,12 +92,19 @@ static uint32_t get_sbe_body_len(const b3_packet* __packet)
 
 static bool next_sbe_message(b3_packet* __packet)
 {
-    __packet->offset += sizeof(b3_packet_body_hdr) + get_sbe_body_len(__packet);
+    if(__packet->offset > __packet->len)
+    {
+        return false;
+    }
+    auto v =  get_sbe_body_len(__packet);
+    __packet->offset += v;
     if(__packet->offset >= __packet->len)
     {
         return false;
     }
+
     __packet->current_sbe_packet = (b3_packet_body_hdr *)((uint8_t *)__packet->data + __packet->offset);
+    __packet->offset += sizeof(b3_packet_body_hdr);
     __packet->sbe_body = (char *)((uint8_t *)__packet->current_sbe_packet + sizeof(b3_packet_body_hdr));
     return true;
 }

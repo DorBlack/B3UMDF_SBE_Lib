@@ -157,21 +157,37 @@ namespace b3::umdf
                     _M_instrument_definition_container.clear();
                     break;
                 case CarrouselAction::enqueue:
-                    //_M_instrument_definition_container.emplace_back(std::move(ret.second.value()));
+                {
+                    auto tmp = std::make_shared<TempBuffer>();
+                    memcpy(tmp->buffer, packet.data, packet.len);
+                    tmp->len = packet.len;
+                    _M_instrument_definition_container.emplace_back(tmp);
                     break;
+                }
                 case CarrouselAction::send:
                 {
-                    /*
-                    for(const auto& value : _M_instrument_definition_container)
+                    for(auto value : _M_instrument_definition_container)
                     {
-                        _M_notify->on_security_def(value);
+                        auto b3_pkt = b3_packet(value->buffer, value->len);
+                        auto tmp = b3_pkt;
+                        while(next_sbe_message(&tmp))
+                        {
+                            if(tmp.current_sbe_packet->sbe_msg_hdr.template_id == SecurityDefinition_4::SBE_TEMPLATE_ID)
+                            {
+                                auto msg1 = get_sbe_message<SecurityDefinition_4>(&tmp);
+                                std::cout << "send symbol: " << msg1.symbol() << std::endl;
+                        //        _M_notify->on_security_def(value);
+                            }
+                        }
                     }
                     _M_instrument_definition_container.clear();
-                    channel_engine::update_phase(_M_channel_status);
-                    _M_sock_instrument_definition->leave_group();
+                    _M_sock_instrument_definition.leave_group(_M_configuration.instrument_def.interface,
+                                                               _M_configuration.instrument_def.address);
+                    _M_channel_status.phase = Phase::Snapshot;
+                    _M_channel_status.instrument_definition.report = 0x00;
+                    _M_channel_status.instrument_definition.tot_report = 0x00;
                     std::cout << "Phase: Snapshot" << std::endl;
                     break;
-                     */
                 }
                 case CarrouselAction::ignore:
                     break;
@@ -325,13 +341,19 @@ namespace b3::umdf
 
         static constexpr int CONTAINER_SIZE = 1500;
 
+        struct TempBuffer
+        {
+            char buffer[CONTAINER_SIZE];
+            uint32_t len;
+        };
+
         std::shared_ptr<channel_notification> _M_notify;
         channel_status _M_channel_status;
         b3::channel_config _M_configuration;
         io::network::multicast_udp_receiver _M_sock_instrument_definition;
         io::network::multicast_udp_receiver _M_sock_snapshot;
         io::network::multicast_udp_receiver _M_sock_incremental_feed_a;
-        std::vector<std::array<char, CONTAINER_SIZE>> _M_instrument_definition_container;
+        std::vector<std::shared_ptr<TempBuffer>> _M_instrument_definition_container;
         std::vector<std::array<char, CONTAINER_SIZE>> _M_snapshot_container;
         std::vector<std::array<char, CONTAINER_SIZE>> _M_incremental_container;
     private:
@@ -450,7 +472,12 @@ namespace b3::umdf
 
                     break;
                 }
-                default: break;
+                case CarrouselResult::discard:
+                    ret = CarrouselAction::discard;
+                    break;
+                default:
+                    ret = CarrouselAction::discard;
+                    break;
             }
             return ret;
         }
