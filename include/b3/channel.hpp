@@ -79,7 +79,16 @@ namespace b3::umdf
 
     public:
         channel(b3::channel_config configuration, std::shared_ptr<channel_notification> notify) :
-                _M_configuration(configuration) , _M_notify(notify)
+                _M_configuration(configuration) , _M_notify(notify),
+                _M_sock_instrument_definition(configuration.instrument_def.interface,
+                                              configuration.instrument_def.address,
+                                              configuration.instrument_def.port),
+                _M_sock_snapshot(configuration.snapshot.interface,
+                                 configuration.snapshot.address,
+                                 configuration.snapshot.port),
+                _M_sock_incremental_feed_a(configuration.feed_a.interface,
+                                           configuration.feed_a.address,
+                                           configuration.feed_a.port)
         {
             configure_sockets();
         }
@@ -97,8 +106,9 @@ namespace b3::umdf
                     return false;
                 }
                 _M_channel_status.phase = Phase::InstrumentDef;
-                std::cout << "join to instrument group " << std::endl;
                 _M_sock_instrument_definition.start();
+                _M_sock_snapshot.start();
+                _M_sock_incremental_feed_a.start();
                 return true;
             }
             return false;
@@ -113,34 +123,24 @@ namespace b3::umdf
 
         void reset()
         {
+            stop();
+            start();
         }
 
         ~channel()
         {
+            stop();
         }
     private:
 
         void configure_sockets()
         {
-            if(!_M_sock_instrument_definition.bind_to_interface(_M_configuration.instrument_def.interface))
-            {
-                std::cout << "error bind to interface instrument def " << _M_configuration.instrument_def.interface << std::endl;
-            }
             _M_sock_instrument_definition.set_output([&](io::network::udp_packet packet) {
                 on_instrument_def_msg_received(packet.data, ntohs(packet.udp->len));
             });
-            if(!_M_sock_snapshot.bind_to_interface(_M_configuration.snapshot.interface))
-            {
-                std::cout << "error bind to interface snapshot" << _M_configuration.snapshot.interface << std::endl;
-            }
             _M_sock_snapshot.set_output([&](io::network::udp_packet packet) {
                 on_snapshot_msg_received(packet.data, ntohs(packet.udp->len));
             });
-
-            if(!_M_sock_incremental_feed_a.bind_to_interface(_M_configuration.feed_a.interface))
-            {
-                std::cout << "error bind to interface feed a" << _M_configuration.feed_a.interface << std::endl;
-            }
             _M_sock_incremental_feed_a.set_output([&](io::network::udp_packet packet) {
                 on_incremental_a_msg_received(packet.data, ntohs(packet.udp->len));
             });
@@ -149,9 +149,7 @@ namespace b3::umdf
         void on_instrument_def_msg_received(char *buffer, uint32_t len)
         {
             auto packet = b3_packet(buffer, len);
-
             auto ret = check_instrument_definition_packet(packet);
-
             switch(ret) {
                 case CarrouselAction::discard:
                     _M_instrument_definition_container.clear();
@@ -183,6 +181,8 @@ namespace b3::umdf
                     _M_instrument_definition_container.clear();
                     _M_sock_instrument_definition.leave_group(_M_configuration.instrument_def.interface,
                                                                _M_configuration.instrument_def.address);
+                    _M_sock_snapshot.join_to_group(_M_configuration.snapshot.interface, _M_configuration.snapshot.address,
+                                                   _M_configuration.snapshot.port);
                     _M_channel_status.phase = Phase::Snapshot;
                     _M_channel_status.instrument_definition.report = 0x00;
                     _M_channel_status.instrument_definition.tot_report = 0x00;
@@ -191,52 +191,199 @@ namespace b3::umdf
                 }
                 case CarrouselAction::ignore:
                     break;
-            };
+            }
         }
 
         void on_snapshot_msg_received(char *__buffer, uint32_t __len)
         {
-            /*
-            using namespace ::b3::channel;
-            auto ret = channel_engine::proccess_snapshot(__buffer, _M_channel_status);
-            B3MsgResult result = ret.first;
-            switch(result) {
-                    //aqui vamos mandar o carrousel e atualizar o status
-                case B3MsgResult::discard:
-                {
+            auto packet = b3_packet(__buffer, __len);
+            auto ret = check_snapshot_packet(packet);
+            switch(ret) {
+                case CarrouselAction::discard:
                     _M_snapshot_container.clear();
                     break;
-                }
-                case B3MsgResult::enqueue:
+                case CarrouselAction::enqueue:
                 {
-                    _M_snapshot_container.emplace_back(std::move(ret.second.value()));
+                    auto tmp = std::make_shared<TempBuffer>();
+                    memcpy(tmp->buffer, packet.data, packet.len);
+                    tmp->len = packet.len;
+                    _M_snapshot_container.emplace_back(tmp);
                     break;
                 }
-                case B3MsgResult::send:
+                case CarrouselAction::send:
                 {
-                    for(const auto& value : _M_snapshot_container)
+                    for(auto value : _M_snapshot_container)
                     {
-                        _M_notify->on_snapshot(value);
+                        auto b3_pkt = b3_packet(value->buffer, value->len);
+                        auto tmp = b3_pkt;
+                        while(next_sbe_message(&tmp))
+                        {
+                        //        auto msg1 = get_sbe_message<SecurityDefinition_4>(&tmp);
+                        //        std::cout << "send symbol: " << msg1.symbol() << std::endl;
+                        //        _M_notify->on_security_def(value);
+                            std::cout << "snapshot send " << std::endl;
+                        }
                     }
                     _M_snapshot_container.clear();
-                    channel_engine::update_phase(_M_channel_status);
+                    _M_sock_snapshot.leave_group(_M_configuration.snapshot.interface,
+                                                               _M_configuration.snapshot.address);
+                    _M_channel_status.phase = Phase::IncrementalTrans;
+                    _M_channel_status.snapshot.report = 0x00;
+                    _M_channel_status.snapshot.tot_report = 0x00;
                     std::cout << "Phase: Incremental" << std::endl;
                     break;
                 }
-
-                case B3MsgResult::ok:
-                case B3MsgResult::new_seq_version:
-                case B3MsgResult::incremental_trans:
-                case B3MsgResult::incremental_reset:
-                case B3MsgResult::channel_reset:
-                case B3MsgResult::gap:
-                case B3MsgResult::sequencer:
+                case CarrouselAction::ignore:
                     break;
-            };*/
+            }
         }
 
         void on_incremental_a_msg_received(char* __buffer, uint32_t __len)
         {
+            auto packet = b3_packet(__buffer, __len);
+            auto result = check_incremental_packet(packet);
+
+            switch (result) {
+                case IncrementalAction::send:
+                    break;
+                case IncrementalAction::discard:
+                case IncrementalAction::ignore:
+                {
+                    return;
+                }
+                case IncrementalAction::enqueue:
+                {
+                    auto tmp = std::make_shared<TempBuffer>();
+                    memcpy(tmp->buffer, packet.data, packet.len);
+                    tmp->len = packet.len;
+                    _M_incremental_container.emplace_back(tmp);
+                    break;
+                }
+                case IncrementalAction::transition:
+                {
+                    for(auto value : _M_incremental_container)
+                    {
+                        auto last_seqnum = _M_channel_status.incremental.seqnum;
+                        const auto& current_seqnum = packet.header->sequence_number;
+                        std::cout << "Incremental transition: queue: " << _M_incremental_container.size() << std::endl;
+                        std::cout << "Incremental transition: last seqnum: " << last_seqnum << std::endl;
+                        std::cout << "Incremental transition: current seqnum: " << current_seqnum << std::endl;
+
+                        if(!_M_incremental_container.empty())
+                        {
+                            const auto& size = _M_incremental_container.size() ;
+
+                            for(std::uint64_t i = 0; i < size; ++i)
+                            {
+                                const auto& bf = _M_incremental_container[i];
+                                auto b3_pkt = b3_packet(bf->buffer, bf->len);
+                                const auto& seqnum = b3_pkt.header->sequence_number;
+
+                                if (last_seqnum >= seqnum) continue;
+                                if(last_seqnum == seqnum - 1)
+                                {
+                                    auto tmp = b3_pkt;
+                                    while(next_sbe_message(&tmp))
+                                    {
+                                        //        auto msg1 = get_sbe_message<SecurityDefinition_4>(&tmp);
+                                        //        std::cout << "send symbol: " << msg1.symbol() << std::endl;
+                                        //        _M_notify->on_security_def(value);
+                                        std::cout << "incremental send" << std::endl;
+                                    }
+                                    ++last_seqnum;
+                                }
+                                else
+                                {
+                                    _M_channel_status.phase = Phase::Snapshot;
+                                    std::cout << "Gap no carrousel " << std::endl;
+                                    break;
+                                }
+                            }
+                            _M_incremental_container.clear();
+
+                            if(_M_channel_status.phase == Phase::Snapshot)
+                            {
+                                break;
+                            }
+                        }
+
+
+                        if (last_seqnum + 1 == current_seqnum)
+                        {
+                            //_M_notify->on_incremental(ret.second.value());
+                            auto tmp = packet;
+                            while(next_sbe_message(&tmp))
+                            {
+                                //        auto msg1 = get_sbe_message<SecurityDefinition_4>(&tmp);
+                                //        std::cout << "send symbol: " << msg1.symbol() << std::endl;
+                                //        _M_notify->on_security_def(value);
+                                std::cout << "incremental send" << std::endl;
+                            }
+                            ++last_seqnum;
+                            _M_channel_status.phase = Phase::Incremental;
+                            _M_sock_snapshot.leave_group();
+                        }
+                        else if( last_seqnum < current_seqnum)
+                        {
+                            std::cout << "Gap na transição " << std::endl;
+                            std::cout << "Incremental transition: last seqnum: " << last_seqnum << std::endl;
+                            std::cout << "Incremental transition: current seqnum: " << current_seqnum << std::endl;
+                            std::cout << "Gap na transição " << std::endl;
+                            _M_channel_status.phase = Phase::Snapshot;
+                            break;
+                        }
+                        else
+                        {
+                            _M_channel_status.phase = Phase::Incremental;
+                            _M_sock_snapshot.leave_group();
+                        }
+                        break;
+                    }
+                    _M_incremental_container.clear();
+                    break;
+                }
+                case IncrementalAction::gap:
+                {
+                    std::cout << "Gap" << std::endl;
+                    _M_channel_status.incremental.seqnum = 0x00;
+                    _M_channel_status.phase = Phase::Snapshot;
+                    _M_sock_snapshot.join_to_group(_M_configuration.snapshot.interface,
+                                                   _M_configuration.snapshot.address,
+                                                   _M_configuration.snapshot.port);
+                    std::cout << "Phase: Snapshot" << std::endl;
+                    break;
+                }
+                case IncrementalAction::channel_reset:
+                    std::cout << "channel reset" << std::endl;
+                    //segundo a documentação tudo é invalidado então voltamos a fase de
+                    //instrument definition
+                    _M_sock_incremental_feed_a.leave_group(_M_configuration.feed_a.interface,
+                                                           _M_configuration.feed_a.address);
+                    _M_channel_status.incremental.version = 0x00;
+                    _M_channel_status.incremental.seqnum = 0x00;
+                    _M_channel_status.phase = Phase::InstrumentDef;
+                    //Enviar mensagem para o cliente deletar tudo
+                    _M_sock_instrument_definition.join_to_group(_M_configuration.instrument_def.interface,
+                                                                _M_configuration.instrument_def.address,
+                                                                _M_configuration.instrument_def.port);
+                    break;
+                case IncrementalAction::sequential_reset:
+                {
+                    std::cout << "sequential reset" << std::endl;
+                    //segundo a documentação caso isso ocorra a versão é incrementada e voltamos
+                    //para o snapshot;
+                   _M_channel_status.incremental.version += 1;
+                   _M_channel_status.incremental.seqnum = 0x00;
+                   _M_channel_status.phase = Phase::Snapshot;
+                   //enviar a mensagem para o cliente limpar tudo;
+                   _M_sock_snapshot.join_to_group(_M_configuration.snapshot.interface,
+                                                  _M_configuration.snapshot.address,
+                                                  _M_configuration.snapshot.port);
+                   std::cout << "Phase: Snapshot" << std::endl;
+                    break;
+                }
+
+            }
             /*
             auto ret = channel_engine::process_incremental(msg1.value(), _M_channel_status);
             B3MsgResult result = ret.first;
@@ -354,8 +501,8 @@ namespace b3::umdf
         io::network::multicast_udp_receiver _M_sock_snapshot;
         io::network::multicast_udp_receiver _M_sock_incremental_feed_a;
         std::vector<std::shared_ptr<TempBuffer>> _M_instrument_definition_container;
-        std::vector<std::array<char, CONTAINER_SIZE>> _M_snapshot_container;
-        std::vector<std::array<char, CONTAINER_SIZE>> _M_incremental_container;
+        std::vector<std::shared_ptr<TempBuffer>> _M_snapshot_container;
+        std::vector<std::shared_ptr<TempBuffer>> _M_incremental_container;
     private:
         enum class CarrouselAction
         {
@@ -365,6 +512,16 @@ namespace b3::umdf
             send
         };
 
+        enum class IncrementalAction{
+            discard,
+            ignore,
+            enqueue,
+            transition,
+            send,
+            gap,
+            channel_reset,
+            sequential_reset
+        };
         enum class CarrouselResult
         {
             ok,
@@ -480,6 +637,144 @@ namespace b3::umdf
                     break;
             }
             return ret;
+        }
+
+        inline CarrouselAction check_snapshot_packet(const b3_packet& packet) {
+            if(_M_channel_status.phase != Phase::Snapshot)
+            {
+                return CarrouselAction::discard;
+            }
+            if(packet.current_sbe_packet->sbe_msg_hdr.template_id  == Sequence_2::SBE_TEMPLATE_ID)
+            {
+                return CarrouselAction::ignore;
+            }
+            auto b3ret = carrousel_check(_M_channel_status.instrument_definition, packet);
+            auto ret = CarrouselAction::discard;
+            switch (b3ret) {
+                case CarrouselResult::gap:
+                case CarrouselResult::discard: {
+                    break;
+                }
+                case CarrouselResult::ok: {
+                    if(packet.current_sbe_packet->sbe_msg_hdr.template_id == SequenceReset_1::SBE_TEMPLATE_ID)
+                    {
+                        if(_M_channel_status.snapshot.report != _M_channel_status.snapshot.tot_report)
+                        {
+                            std::cout << "invalid snapshot faltando mensagem" << std::endl;
+                            ret = CarrouselAction::discard;
+                        }
+                        else
+                        {
+                            ret = CarrouselAction::send;
+                        }
+                    }
+                    else
+                    {
+                        auto tmp = packet;
+                        if(tmp.current_sbe_packet->sbe_msg_hdr.template_id == SnapshotFullRefresh_Header_30::SBE_TEMPLATE_ID)
+                        {
+                            auto v = get_sbe_message<SnapshotFullRefresh_Header_30>(&tmp);
+                            _M_channel_status.incremental.seqnum = v.lastMsgSeqNumProcessed();
+                            _M_channel_status.snapshot.tot_report = v.totNumReports();
+                            ++_M_channel_status.snapshot.report;
+                        }
+                        while(next_sbe_message(&tmp))
+                        {
+                            if(tmp.current_sbe_packet->sbe_msg_hdr.template_id == SnapshotFullRefresh_Header_30::SBE_TEMPLATE_ID)
+                            {
+                                auto v = get_sbe_message<SnapshotFullRefresh_Header_30>(&tmp);
+                                _M_channel_status.incremental.seqnum = v.lastMsgSeqNumProcessed();
+                                _M_channel_status.snapshot.tot_report = v.totNumReports();
+                                ++_M_channel_status.snapshot.report;
+                            }
+                        }
+                        ret = CarrouselAction::enqueue;
+                    }
+                    break;
+                }
+                case CarrouselResult::new_seq_ver: {
+                    _M_channel_status.snapshot.report = 0x00;
+                    auto tmp = packet;
+                    if(tmp.current_sbe_packet->sbe_msg_hdr.template_id == SnapshotFullRefresh_Header_30::SBE_TEMPLATE_ID)
+                    {
+                        auto v = get_sbe_message<SnapshotFullRefresh_Header_30>(&tmp);
+                        _M_channel_status.incremental.seqnum = v.lastMsgSeqNumProcessed();
+                        _M_channel_status.snapshot.tot_report = v.totNumReports();
+                        ++_M_channel_status.snapshot.report;
+                    }
+                    while(next_sbe_message(&tmp))
+                    {
+                        if(tmp.current_sbe_packet->sbe_msg_hdr.template_id == SnapshotFullRefresh_Header_30::SBE_TEMPLATE_ID)
+                        {
+                            auto v = get_sbe_message<SnapshotFullRefresh_Header_30>(&tmp);
+                            _M_channel_status.incremental.seqnum = v.lastMsgSeqNumProcessed();
+                            _M_channel_status.snapshot.tot_report = v.totNumReports();
+                            ++_M_channel_status.snapshot.report;
+                        }
+                    }
+                    ret = CarrouselAction::enqueue;
+                    break;
+                }
+            }
+            return ret;
+        }
+
+        inline IncrementalAction check_incremental_packet(b3_packet& __packet) {
+
+            if(_M_channel_status.phase == channel::Phase::InstrumentDef)
+            {
+                return  IncrementalAction::discard;
+            }
+
+            if(__packet.current_sbe_packet->sbe_msg_hdr.template_id == Sequence_2::SBE_TEMPLATE_ID)
+            {
+                return  IncrementalAction::discard;
+            }
+
+            if(__packet.current_sbe_packet->sbe_msg_hdr.template_id == SequenceReset_1::SBE_TEMPLATE_ID)
+            {
+                return IncrementalAction::sequential_reset;
+            }
+
+            if(__packet.current_sbe_packet->sbe_msg_hdr.template_id == ChannelReset_11::SBE_TEMPLATE_ID)
+            {
+                return IncrementalAction::channel_reset;
+            }
+
+            if(_M_channel_status.phase == channel::Phase::Snapshot)
+            {
+                return IncrementalAction::enqueue;
+            }
+
+            if(_M_channel_status.phase == channel::Phase::IncrementalTrans) {
+                return IncrementalAction::transition;
+            }
+            //first msg processed
+            if(_M_channel_status.incremental.version == 0x00)
+            {
+                _M_channel_status.incremental.version = __packet.header->sequence_version;
+            }
+
+            if(_M_channel_status.incremental.version != __packet.header->sequence_version)
+            {
+                return IncrementalAction::sequential_reset;
+            }
+
+            auto seq_num = __packet.header->sequence_number;
+
+            if( seq_num - 1 == _M_channel_status.incremental.seqnum)
+            {
+                ++_M_channel_status.incremental.seqnum;
+                return IncrementalAction::send;
+            }
+            else if( seq_num - 1 > _M_channel_status.incremental.seqnum)
+            {
+                return IncrementalAction::gap;
+            }
+            else
+            {
+                return IncrementalAction::discard;
+            }
         }
     };
 }

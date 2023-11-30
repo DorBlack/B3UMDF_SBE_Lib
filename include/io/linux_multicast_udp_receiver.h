@@ -1,9 +1,0 @@
-//
-// Created by santana on 11/25/23.
-//
-
-#ifndef UMDF_B3_SBE_LINUX_MULTICAST_UDP_RECEIVER_H
-#define UMDF_B3_SBE_LINUX_MULTICAST_UDP_RECEIVER_H
-
-#include <sys/socket.h>
-#endif //UMDF_B3_SBE_LINUX_MULTICAST_UDP_RECEIVER_H

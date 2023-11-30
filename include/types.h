@@ -7,7 +7,37 @@
 
 #include <memory>
 #include <functional>
-#include "b3/protocol/sbe_message.hpp"
+#include <variant>
+
+#include "b3/protocol/b3_umdf_mbo_sbe/SequenceReset_1.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/Sequence_2.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/SecurityStatus_3.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/SecurityGroupPhase_10.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/SecurityDefinition_4.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/News_5.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/EmptyBook_9.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/ChannelReset_11.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/OpeningPrice_15.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/TheoreticalOpeningPrice_16.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/ClosingPrice_17.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/AuctionImbalance_19.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/PriceBand_20.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/QuantityBand_21.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/HighPrice_24.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/LowPrice_25.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/LastTradePrice_27.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/SnapshotFullRefresh_Header_30.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/Order_MBO_50.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/DeleteOrder_MBO_51.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/MassDeleteOrders_MBO_52.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/Trade_53.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/ForwardTrade_54.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/ExecutionSummary_55.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/ExecutionStatistics_56.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/TradeBust_57.h"
+#include "b3/protocol/b3_umdf_mbo_sbe/SnapshotFullRefresh_Orders_MBO_71.h"
+
+using namespace b3::umdf::mbo::sbe;
 
 using SbeMessage = std::variant<
         SequenceReset_1,
@@ -39,15 +69,9 @@ using SbeMessage = std::variant<
         SnapshotFullRefresh_Orders_MBO_71
 >;
 
-
-namespace io::socket
+class sbe_message
 {
-    template<typename Buffer>
-    struct socket_notification
-    {
-        std::function<void(std::shared_ptr<Buffer>)> on_msg_received;
-        std::function<void(std::error_code)> on_error;
-    };
-}
+private:
 
+};
 #endif //UMDF_B3_SBE_TYPES_H

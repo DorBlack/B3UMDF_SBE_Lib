@@ -90,6 +90,7 @@ namespace io::network {
 
     class multicast_udp_receiver {
     public:
+        /*
         multicast_udp_receiver(const std::string __interface) {
             init_socket();
             v3_fill();
@@ -105,6 +106,17 @@ namespace io::network {
             setup_ring_buffer();
             create_mmap();
             config_poll();
+        }*/
+
+        multicast_udp_receiver(std::string __interface, std::string __address, short __port) {
+            init_socket();
+            v3_fill();
+            setup_ring_buffer();
+            create_mmap();
+            config_poll();
+            _M_interface = __interface;
+            _M_group = ntohl(get_binary_ip(__address));
+            _M_port = __port;
         }
 
 
@@ -112,8 +124,14 @@ namespace io::network {
             _M_output = __output;
         }
 
-        bool join_to_group(const std::string __interface, const std::string __ipv4, std::uint16_t __port) {
+        bool join_to_group()
+        {
+            auto index = get_inteface_index(_M_interface);
+            return join_to_group(index, _M_group);
+        }
 
+        bool join_to_group(const std::string __interface, const std::string __ipv4, std::uint16_t __port) {
+            _M_interface = __interface;
             _M_port = __port;
             auto index = get_inteface_index(__interface);
             auto bip = get_binary_ip(__ipv4);
@@ -127,7 +145,8 @@ namespace io::network {
 
         bool leave_group()
         {
-            return true;
+            auto index = get_inteface_index(_M_interface);
+            return leave_group(index, ntohl(_M_group));
         }
 
         bool leave_group(const std::string __interface, const std::string __ipv4) {
@@ -383,6 +402,7 @@ namespace io::network {
         std::function<void(const udp_packet &)> _M_output;
         std::uint32_t _M_group;
         std::uint16_t _M_port;
+        std::string _M_interface;
     };
 }
 #endif //PACKAGE_MULTICAST_UDP_SOCKET_LIBRARY_H
