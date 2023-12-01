@@ -78,9 +78,9 @@ namespace b3::umdf
         };
     public:
         struct channel_notification {
-            std::function<void(const uint32_t, const SbeMessage&)> on_incremental;
-            std::function<void(const uint32_t, const SbeMessage&)> on_snapshot;
-            std::function<void(const uint32_t, const SbeMessage&)> on_security_def;
+            std::function<void(const sbe::sbe_message&)> on_incremental;
+            std::function<void(const sbe::sbe_message&)> on_snapshot;
+            std::function<void(const sbe::sbe_message&)> on_security_def;
         };
     public:
         channel(b3::channel_config configuration, std::shared_ptr<channel_notification> notify) :
@@ -141,18 +141,19 @@ namespace b3::umdf
         void configure_sockets()
         {
             _M_sock_instrument_definition.set_output([&](io::network::udp_packet packet) {
-                on_instrument_def_msg_received(packet.data, ntohs(packet.udp->len));
+                on_instrument_def_msg_received(packet.data, ntohs(packet.udp->len) - 8, packet.timestamp_ns);
             });
             _M_sock_snapshot.set_output([&](io::network::udp_packet packet) {
-                on_snapshot_msg_received(packet.data, ntohs(packet.udp->len));
+                on_snapshot_msg_received(packet.data, ntohs(packet.udp->len) - 8, packet.timestamp_ns);
             });
             _M_sock_incremental_feed_a.set_output([&](io::network::udp_packet packet) {
-                on_incremental_a_msg_received(packet.data, ntohs(packet.udp->len));
+                on_incremental_a_msg_received(packet.data, ntohs(packet.udp->len) - 8, packet.timestamp_ns);
             });
         }
-        void on_instrument_def_msg_received(char *buffer, uint32_t len)
+        void on_instrument_def_msg_received(char *buffer, uint32_t len, uint64_t  created_time_ns)
         {
-            auto packet = sbe::message(buffer, len);
+            auto packet = sbe::message(buffer, len, created_time_ns);
+            packet.set_created_time(created_time_ns);
             auto ret = check_instrument_definition_packet(packet);
             switch(ret) {
                 case CarrouselAction::discard:
@@ -170,17 +171,11 @@ namespace b3::umdf
                 {
                     for(auto value : _M_instrument_definition_container)
                     {
-                        auto b3_pkt = sbe::message(value->buffer, value->len);
+                        auto b3_pkt = sbe::message(value->buffer, value->len, created_time_ns);
                         auto tmp = b3_pkt;
                         do
                         {
-                            if (tmp.current_sbe_msg->header->templateId() ==
-                                SecurityDefinition_4::SBE_TEMPLATE_ID) {
-                                auto msg = std::get_if<SecurityDefinition_4>(&tmp.current_sbe_msg->body);
-                                // auto msg1 = SbeMessage(get_sbe_message<SecurityDefinition_4>(&tmp));
-                                //  _M_notify->on_incremental(tmp.current_sbe_packet->sbe_msg_hdr.template_id, msg1);
-                                std::cout << msg->symbol() << std::endl;
-                            }
+                            _M_notify->on_security_def(*(tmp.current_sbe_msg));
                         }
                         while(tmp.has_next_sbe_msg());
                     }
@@ -198,9 +193,10 @@ namespace b3::umdf
                     break;
             }
         }
-        void on_snapshot_msg_received(char *__buffer, uint32_t __len)
+        void on_snapshot_msg_received(char *__buffer, uint32_t __len, uint64_t  created_time_ns)
         {
-            auto packet = sbe::message(__buffer, __len);
+            auto packet = sbe::message(__buffer, __len, created_time_ns);
+            packet.set_created_time(created_time_ns);
             auto ret = check_snapshot_packet(packet);
             switch(ret) {
                 case CarrouselAction::discard:
@@ -218,14 +214,11 @@ namespace b3::umdf
                 {
                     for(auto value : _M_snapshot_container)
                     {
-                        auto b3_pkt = sbe::message(value->buffer, value->len);
+                        auto b3_pkt = sbe::message(value->buffer, value->len, created_time_ns);
                         auto tmp = b3_pkt;
                         do
                         {
-                        //        auto msg1 = get_sbe_message<SecurityDefinition_4>(&tmp);
-                        //        std::cout << "send symbol: " << msg1.symbol() << std::endl;
-                        //        _M_notify->on_security_def(value);
-                            std::cout << "snapshot send " << std::endl;
+                            _M_notify->on_security_def(*tmp.current_sbe_msg);
                         }
                         while(tmp.has_next_sbe_msg());
                     }
@@ -241,12 +234,22 @@ namespace b3::umdf
                     break;
             }
         }
-        void on_incremental_a_msg_received(char* __buffer, uint32_t __len)
+
+        struct timespec _timer;
+        void on_incremental_a_msg_received(char* __buffer, uint32_t __len, uint64_t created_time_ns)
         {
-            auto packet = sbe::message(__buffer, __len);
+            auto packet = sbe::message(__buffer, __len, created_time_ns);
+            packet.set_created_time(created_time_ns);
             auto result = check_incremental_packet(packet);
             switch (result) {
                 case IncrementalAction::send:
+                    do
+                    {
+                        //        auto msg1 = get_sbe_message<SecurityDefinition_4>(&tmp);
+                        //        std::cout << "send symbol: " << msg1.symbol() << std::endl;
+                        _M_notify->on_incremental(*packet.current_sbe_msg);
+                    }
+                    while(packet.has_next_sbe_msg());
                     break;
                 case IncrementalAction::discard:
                 case IncrementalAction::ignore:
@@ -277,7 +280,7 @@ namespace b3::umdf
                             for(std::uint64_t i = 0; i < size; ++i)
                             {
                                 const auto& bf = _M_incremental_container[i];
-                                auto b3_pkt = sbe::message(bf->buffer, bf->len);
+                                auto b3_pkt = sbe::message(bf->buffer, bf->len, created_time_ns);
                                 const auto& seqnum = b3_pkt.header.get_sequence_number();
                                 if (last_seqnum >= seqnum) continue;
                                 if(last_seqnum == seqnum - 1)
@@ -287,8 +290,7 @@ namespace b3::umdf
                                     {
                                         //        auto msg1 = get_sbe_message<SecurityDefinition_4>(&tmp);
                                         //        std::cout << "send symbol: " << msg1.symbol() << std::endl;
-                                        //        _M_notify->on_security_def(value);
-                                        std::cout << "incremental send" << std::endl;
+                                        _M_notify->on_incremental(*tmp.current_sbe_msg);
                                     }
                                     while(tmp.has_next_sbe_msg());
                                     ++last_seqnum;
@@ -309,14 +311,10 @@ namespace b3::umdf
                         }
                         if (last_seqnum + 1 == current_seqnum)
                         {
-                            //_M_notify->on_incremental(ret.second.value());
                             auto tmp = packet;
                             do
                             {
-                                //        auto msg1 = get_sbe_message<SecurityDefinition_4>(&tmp);
-                                //        std::cout << "send symbol: " << msg1.symbol() << std::endl;
-                                //        _M_notify->on_security_def(value);
-                                std::cout << "incremental send" << std::endl;
+                                _M_notify->on_incremental(*tmp.current_sbe_msg);
                             }
                             while(tmp.has_next_sbe_msg());
                             ++last_seqnum;
@@ -556,7 +554,7 @@ namespace b3::umdf
                         auto tmp = packet;
                         do
                         {
-                            if(packet.current_sbe_msg->header->templateId() == SnapshotFullRefresh_Header_30::SBE_TEMPLATE_ID)
+                            if(tmp.current_sbe_msg->header->templateId() == SnapshotFullRefresh_Header_30::SBE_TEMPLATE_ID)
                             {
                                 auto v = std::get_if<SnapshotFullRefresh_Header_30>(&tmp.current_sbe_msg->body);
                                 _M_channel_status.incremental.seqnum = v->lastMsgSeqNumProcessed();

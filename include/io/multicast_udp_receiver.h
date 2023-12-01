@@ -82,7 +82,7 @@ namespace io::network {
         ip_hdr* ip;
         udp_hdr* udp;
         char *data;
-        uint32_t timestamp_ns;
+        uint64_t timestamp_ns;
     };
 
     struct __udp_packet {
@@ -262,7 +262,7 @@ namespace io::network {
                            sizeof(_M_sock.packet_version))) {
                 return std::make_error_code(std::errc::invalid_argument);
             }
-            int req = SOF_TIMESTAMPING_RAW_HARDWARE;
+            int req = 1;
             if (setsockopt(_M_sock.fd, SOL_PACKET, PACKET_TIMESTAMP, (void *) &req, sizeof(req))) {
                 return std::make_error_code(std::errc::invalid_argument);
             }
@@ -330,6 +330,7 @@ namespace io::network {
                     poll(&_M_pfd, 1, -1);
                     continue;
                 }
+                clock_gettime(CLOCK_MONOTONIC, &_timer);
                 walk_block(pbd);
                 flush_block(pbd);
                 block_num = (block_num + 1) % _M_ring.req.tp_block_nr;
@@ -364,7 +365,7 @@ namespace io::network {
                     .ip = ip,
                     .udp = udp,
                     .data = payload,
-                    .timestamp_ns = ppd->tp_nsec};
+                    .timestamp_ns = (uint64_t)_timer.tv_nsec};
 
             if (ntohs(packet.eth->h_proto) == ETH_P_IP &&
                 packet.ip->protocol == UDP_PROTOCOL &&
@@ -399,6 +400,7 @@ namespace io::network {
         std::uint16_t _M_port;
         std::string _M_interface;
         std::string _M_address;
+        struct timespec _timer;
     };
 }
 #endif //PACKAGE_MULTICAST_UDP_SOCKET_LIBRARY_H

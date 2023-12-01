@@ -26,7 +26,9 @@
 #include <iostream>
 #include "b3/channel.hpp"
 #include "time.h"
+#include <chrono>
 
+using namespace b3::protocol;
 int main(int argc, char** argv)
 {
     struct timespec _timer;
@@ -36,23 +38,24 @@ int main(int argc, char** argv)
 
     auto output = std::make_shared<b3::umdf::channel::channel_notification>();
 
-    output->on_security_def = [&](const uint32_t __template_id, const SbeMessage& __msg) {
+    output->on_security_def = [&](const sbe::sbe_message& __msg) {
     };
-    output->on_incremental = [&](const uint32_t __template_id, const SbeMessage& __msg) {
-        /*
+    output->on_incremental = [&](const sbe::sbe_message& __msg) {
+
         clock_gettime(CLOCK_MONOTONIC, &_timer);
-        results[index] =  _timer.tv_nsec - msg.get_created_time_nano() ;
-        msgs[index] = msg.body_size;
+        //results[index] = _timer.tv_nsec  - __msg.created_time_tv ;
+        std::cout <<_timer.tv_nsec << " " << __msg.created_time_tv << " " << _timer.tv_nsec - __msg.created_time_tv << std::endl;
+        /*
         if(++index == 3000)
         {
             for(int i = 0; i < index; ++i)
             {
-                std::cout << i <<","<< results[i] << "," << msgs[i] << "," << results[i] / msgs[i] << std::endl;
+                std::cout << i <<","<< results[i] << std::endl;
             }
             index = 0;
         }*/
     };
-    output->on_snapshot = [&](const uint32_t __template_id, const SbeMessage& __msg) {
+    output->on_snapshot = [&](const sbe::sbe_message& __msg) {
     };
 
     auto config = b3::channel_config();

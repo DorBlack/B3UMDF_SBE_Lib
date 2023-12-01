@@ -131,7 +131,7 @@ namespace b3::protocol::sbe
     };
     struct sbe_message {
 
-        sbe_message() = default;
+        sbe_message(std::uint64_t timer) : created_time_tv(timer) {}
         sbe_message(sbe_message& __other) = delete;
         sbe_message(const sbe_message& __other) = delete;
         sbe_message& operator=(const sbe_message& __other) = delete;
@@ -167,6 +167,7 @@ namespace b3::protocol::sbe
                 TradeBust_57,
                 SnapshotFullRefresh_Orders_MBO_71
         > body;
+        uint64_t created_time_tv;
     };
 
     struct message
@@ -174,7 +175,7 @@ namespace b3::protocol::sbe
         b3_header header;
         std::shared_ptr<sbe_message> current_sbe_msg = nullptr;
 
-        message(char* __buffer, size_t __size) : header(__buffer, 0, __size),
+        message(char* __buffer, size_t __size, uint64_t create_time) : header(__buffer, 0, __size),
         _data(__buffer),
         data_size(__size) {
             offset += header.encoded_lenght();
@@ -186,6 +187,7 @@ namespace b3::protocol::sbe
             _data = __other._data;
             data_size = __other.data_size;
             current_sbe_msg = __other.current_sbe_msg;
+            created_time = __other.created_time;
         };
 
         message(const message& __other) = delete;
@@ -193,9 +195,14 @@ namespace b3::protocol::sbe
         message& operator=(message&&) = delete;
         message& operator=(const message&&) = delete;
 
-        long get_created_time_nano() const
+        uint64_t get_created_time_nano() const
         {
-            return 0x00;
+            return created_time;
+        }
+
+        void set_created_time(uint64_t value)
+        {
+           created_time = value;
         }
 
         bool has_next_sbe_msg()
@@ -216,6 +223,7 @@ namespace b3::protocol::sbe
         std::size_t offset = 0x00;
         char* _data = nullptr;
         size_t data_size = 0x00;
+        uint64_t created_time = 0x00;
 
         bool _get_next_message()
         {
@@ -240,7 +248,7 @@ namespace b3::protocol::sbe
 
         std::shared_ptr<sbe_message> decoder_sbe_message()
         {
-            auto sbe_msg = std::make_shared<sbe_message>();
+            auto sbe_msg = std::make_shared<sbe_message>(created_time);
             sbe_msg->header = std::make_unique<MessageHeader>();
             sbe_msg->header->wrap(_data, offset, 0, data_size);
             offset += sbe_msg->header->encodedLength();
