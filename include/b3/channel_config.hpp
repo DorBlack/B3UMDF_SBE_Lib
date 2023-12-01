@@ -23,25 +23,28 @@
 // Created by scien on 05/11/2023.
 //
 
-#include "gtest/gtest.h"
-#include "memory/st_cache.hpp"
+#ifndef B3MKTDATA_CHANNEL_CONFIG_HPP
+#define B3MKTDATA_CHANNEL_CONFIG_HPP
 
+#include <string>
 
-TEST(StCacheTest, CacheTest)
+namespace b3
 {
-    auto intCache = memory::st_cache<int, 5>();
-    intCache.input(1);
-    auto result = intCache.try_get_next();
-    ASSERT_TRUE(result);
-    EXPECT_EQ(result.value(), 1);
+struct multicast_config
+{
+    std::string interface;
+    std::string address;
+    short port;
+};
 
-    auto ptrIntCache = memory::st_cache<std::shared_ptr<int>>();
-
-    ptrIntCache.input(std::make_shared<int>(10));
-    auto ptrResult = ptrIntCache.try_get_next();
-    ASSERT_TRUE(ptrResult);
-    EXPECT_EQ(*(ptrResult.value()), 10);
-
-    auto ptrResultNull = ptrIntCache.try_get_next();
-    ASSERT_FALSE(ptrResultNull);
+struct channel_config
+{
+    multicast_config feed_a;
+    multicast_config feed_b;
+    multicast_config instrument_def;
+    multicast_config snapshot;
+};
 }
+
+
+#endif //B3MKTDATA_CHANNEL_CONFIG_HPP

@@ -23,56 +23,57 @@
 // Created by scien on 06/11/2023.
 //
 
-#include "interface/b3_umdf_sbe_api.hpp"
 #include <iostream>
+#include "b3/channel.hpp"
 #include "time.h"
+#include <chrono>
 
+using namespace b3::protocol;
 int main(int argc, char** argv)
 {
     struct timespec _timer;
-
-    constexpr size_t tot = 300000;
-    long results[tot] = {0x00};
-    size_t current = 0;
-
-    auto output = std::make_shared<b3::umdf::sbe::channel_notification>();
-    output->on_security_def = [&](auto msg) {
-        std::cout << "new msg" << std::endl;
+    int index = 0x00;
+    double results[3000];
+    auto output = std::make_shared<b3::umdf::channel::channel_notification>();
+    output->on_security_def = [&](const sbe::sbe_message& __msg) {
     };
-    output->on_incremental = [&](auto msg) {
+    output->on_incremental = [&](const sbe::sbe_message& __msg, uint64_t __timestamp) {
         clock_gettime(CLOCK_MONOTONIC, &_timer);
-        long result = 0;
-        if(current == tot)
+        results[index] = _timer.tv_nsec  - __timestamp;
+        if(++index == 3000)
         {
-            for(size_t x = 0, w = 0; x < tot; ++w)
+            for(int i = 0; i < index; ++i)
             {
-                for(size_t y = 0; y < 100; ++y, ++x)
-                {
-                    result += results[x];
-                }
-                std::cout << w << ": " << result / 100 << " ns\n ";
-                result = 0;
+                std::cout << i <<","<< results[i] << std::endl;
             }
-            int i;
-            std::cin >> i;
+            index = 0;
         }
-        results[current++] = _timer.tv_nsec - msg->get_created_time_nano();
     };
-    output->on_snapshot = [&](auto msg) {
-
+    output->on_snapshot = [&](const sbe::sbe_message& __msg) {
     };
-
-    auto config = b3::engine::channel_config();
-
-    config.instrument_def.address = "/data/072_mbo_security_definition.pcap";
-    config.snapshot.address = "/data/072_mbo_snapshot_recovery.pcap";
-    config.feed_a.address = "/data/072_mbo_incremental_feedA.pcap";
-
-    auto channel = b3::umdf::sbe::backtest_channel(config, output);
-    channel.start();
-
-    std::cout << "press any key to stop" << std::endl;
-    int i = 0;
-    std::cin >> i;
+    auto config = b3::channel_config();
+    config.instrument_def.address = "233.252.8.5";
+    config.instrument_def.port = 30001;
+    config.instrument_def.interface = "enp4s0";
+    config.snapshot.address = "233.252.8.6";
+    config.snapshot.port = 30002;
+    config.snapshot.interface = "enp4s0";
+    config.feed_a.address = "233.252.8.7";
+    config.feed_a.port = 30003;
+    config.feed_a.interface = "enp4s0";
+    auto channel = b3::umdf::channel(config, output);
+    try
+    {
+        if(!channel.start())
+        {
+            std::cout << "error join " << std::endl;
+        }
+        std::cout << "press any key to stop" << std::endl;
+        int i = 0;
+        std::cin >> i;
+    }catch(...)
+    {
+        std::cout << "alguma expcetion" << std::endl;
+    }
     return 0;
 }

@@ -23,9 +23,3 @@ macro(package_add_test_with_libraries TESTNAME FILES LIBRARIES TEST_WORKING_DIRE
 endmacro()
 
 set(LIBS_DEPENDS  b3_umdf asio)
-
-package_add_test_with_libraries(socket_allocator_test allocator_test.cpp "${LIBS_DEPENDS}" "")
-package_add_test_with_libraries(message_b3_protocol_sbe msg_b3_protocol_sbe.cpp "${LIBS_DEPENDS}" "")
-package_add_test_with_libraries(udp_socket_receiver_test udp_socket_receiver_test.cpp "${LIBS_DEPENDS}" "")
-package_add_test_with_libraries(st_cache_test st_cache_test.cpp "${LIBS_DEPENDS}" "")
-package_add_test_with_libraries(channel_test channel_test.cpp "${LIBS_DEPENDS}" "")

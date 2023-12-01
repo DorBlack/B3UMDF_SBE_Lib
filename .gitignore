@@ -2,6 +2,8 @@
 .vs/*
 out/*
 build/*
+.idea/*
 
 compile_commands.json
 *.csv
+cmake-build*

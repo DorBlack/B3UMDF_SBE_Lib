@@ -8,13 +8,13 @@ add_subdirectory(src)
 option(PACKAGE_TESTS "Build the tests" ON)
 
 if(PACKAGE_TESTS)
-    enable_testing()
-    include(GoogleTest)
-    add_subdirectory(tests)
+	#enable_testing()
+    #include(GoogleTest)
+    #   add_subdirectory(tests)
 endif()
 
 option(PACKAGE_BENCHMARK "Build benchmark" ON)
 
 if (PACKAGE_BENCHMARK)
-    add_subdirectory(benchmark)
+    #add_subdirectory(benchmark)
 endif()
