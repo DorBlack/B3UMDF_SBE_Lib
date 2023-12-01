@@ -14,6 +14,7 @@
 #include<netdb.h>
 //============ C++ ================//
 #include <system_error>
+#include <exception>
 #include <string>
 #include <cstring>
 #include <iostream>
@@ -88,26 +89,15 @@ namespace io::network {
 
     };
 
+    enum class ErrorCode
+    {
+        bind_interface_error = 0x01,
+    };
+
+    static const char* BIND_ERROR_DESC = "Error to bind to interface: %s\n";
+
     class multicast_udp_receiver {
     public:
-        /*
-        multicast_udp_receiver(const std::string __interface) {
-            init_socket();
-            v3_fill();
-            setup_ring_buffer();
-            create_mmap();
-            bind_to_interface(__interface);
-            config_poll();
-        }
-
-        multicast_udp_receiver() {
-            init_socket();
-            v3_fill();
-            setup_ring_buffer();
-            create_mmap();
-            config_poll();
-        }*/
-
         multicast_udp_receiver(std::string __interface, std::string __address, short __port) {
             init_socket();
             v3_fill();
@@ -115,10 +105,16 @@ namespace io::network {
             create_mmap();
             config_poll();
             _M_interface = __interface;
-            _M_group = ntohl(get_binary_ip(__address));
+            _M_address = __address;
             _M_port = __port;
+            if (!bind_to_interface(_M_interface))
+            {
+                char msg[500];
+                sprintf(msg, BIND_ERROR_DESC, _M_interface.c_str());
+                throw std::system_error(static_cast<int>(ErrorCode::bind_interface_error), std::generic_category(),
+                                        msg);
+            }
         }
-
 
         void set_output(std::function<void(const udp_packet &)> __output) {
             _M_output = __output;
@@ -126,28 +122,35 @@ namespace io::network {
 
         bool join_to_group()
         {
-            auto index = get_inteface_index(_M_interface);
-            return join_to_group(index, _M_group);
-        }
-
-        bool join_to_group(const std::string __interface, const std::string __ipv4, std::uint16_t __port) {
-            _M_interface = __interface;
-            _M_port = __port;
-            auto index = get_inteface_index(__interface);
-            auto bip = get_binary_ip(__ipv4);
-            _M_group = bip;
-            if(bip == -1 || index == -1)
-            {
-                return false;
-            }
-            return join_to_group(index, ntohl(bip));
+            return join_to_group(_M_interface, _M_address, _M_port);
         }
 
         bool leave_group()
         {
-            auto index = get_inteface_index(_M_interface);
-            return leave_group(index, ntohl(_M_group));
+            return leave_group(_M_interface, _M_address);
         }
+
+        void start() {
+            _M_is_running = true;
+            _M_thread.reset(new std::thread(
+                    [&]() {
+                        read_async();
+                    }
+            ));
+        }
+
+        void stop() {
+            _M_is_running = false;
+            teardown_socket();
+            if (_M_thread->joinable()) {
+                _M_thread->join();
+            }
+        }
+
+        ~multicast_udp_receiver() {
+        }
+
+    private:
 
         bool leave_group(const std::string __interface, const std::string __ipv4) {
 
@@ -176,27 +179,19 @@ namespace io::network {
             return true;
         }
 
-        void start() {
-            _M_is_running = true;
-            _M_thread.reset(new std::thread(
-                    [&]() {
-                        read_async();
-                    }
-            ));
-        }
-
-        void stop() {
-            _M_is_running = false;
-            teardown_socket();
-            if (_M_thread->joinable()) {
-                _M_thread->join();
+        bool join_to_group(const std::string __interface, const std::string __ipv4, std::uint16_t __port) {
+            _M_interface = __interface;
+            _M_port = __port;
+            auto index = get_inteface_index(__interface);
+            auto bip = get_binary_ip(__ipv4);
+            _M_group = bip;
+            if(bip == -1 || index == -1)
+            {
+                return false;
             }
+            return join_to_group(index, ntohl(bip));
         }
 
-        ~multicast_udp_receiver() {
-        }
-
-    private:
         void ipv4MulticastToMac(uint32_t ipv4Multicast, unsigned char macAddress[6]) {
             // O prefixo para endereços MAC multicast é 01:00:5E
             macAddress[0] = 0x01;
@@ -403,6 +398,7 @@ namespace io::network {
         std::uint32_t _M_group;
         std::uint16_t _M_port;
         std::string _M_interface;
+        std::string _M_address;
     };
 }
 #endif //PACKAGE_MULTICAST_UDP_SOCKET_LIBRARY_H

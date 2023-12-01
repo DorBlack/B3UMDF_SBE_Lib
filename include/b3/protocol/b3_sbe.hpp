@@ -37,6 +37,9 @@ struct b3_packet_body_hdr
     sbe_message_header sbe_msg_hdr;
 };
 
+struct b3_packet;
+static uint32_t get_sbe_body_len(const b3_packet* __packet);
+
 struct b3_packet
 {
     b3_packet(char *__data, uint32_t __len) : data(__data), len(__len) {
@@ -44,12 +47,14 @@ struct b3_packet
         current_sbe_packet = (b3_packet_body_hdr* )((uint8_t*)data + sizeof(b3_header));
         sbe_body = __data + sizeof(b3_header) + sizeof(b3_packet_body_hdr);
         offset = sizeof(b3_header) + sizeof(b3_packet_body_hdr);
+        sbe_body_size = get_sbe_body_len(this);
     }
 
     b3_header* header;
     b3_packet_body_hdr* current_sbe_packet;
     uint32_t offset;
     char* sbe_body;
+    uint32_t sbe_body_size;
     char* data;
     uint32_t len;
 };
@@ -61,7 +66,7 @@ static Ty get_sbe_message(const b3_packet* __packet)
     msg.wrapForDecode(__packet->sbe_body, 0,
                       __packet->current_sbe_packet->sbe_msg_hdr.block_length,
                       __packet->current_sbe_packet->sbe_msg_hdr.schema_version,
-                      (__packet->len - __packet->offset));
+                      (__packet->len - (__packet->offset)));
     return msg;
 }
 
@@ -92,20 +97,15 @@ static uint32_t get_sbe_body_len(const b3_packet* __packet)
 
 static bool next_sbe_message(b3_packet* __packet)
 {
-    if(__packet->offset > __packet->len)
+    if(__packet->offset + __packet->sbe_body_size >= __packet->len)
     {
         return false;
     }
-    auto v =  get_sbe_body_len(__packet);
-    __packet->offset += v;
-    if(__packet->offset >= __packet->len)
-    {
-        return false;
-    }
-
+    __packet->offset += __packet->sbe_body_size;
     __packet->current_sbe_packet = (b3_packet_body_hdr *)((uint8_t *)__packet->data + __packet->offset);
     __packet->offset += sizeof(b3_packet_body_hdr);
     __packet->sbe_body = (char *)((uint8_t *)__packet->current_sbe_packet + sizeof(b3_packet_body_hdr));
+    __packet->sbe_body_size =  get_sbe_body_len(__packet);
     return true;
 }
 
