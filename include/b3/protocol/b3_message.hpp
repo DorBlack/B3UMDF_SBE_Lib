@@ -131,7 +131,7 @@ namespace b3::protocol::sbe
     };
     struct sbe_message {
 
-        sbe_message(std::uint64_t timer) : created_time_tv(timer) {}
+        sbe_message()  = default;
         sbe_message(sbe_message& __other) = delete;
         sbe_message(const sbe_message& __other) = delete;
         sbe_message& operator=(const sbe_message& __other) = delete;
@@ -167,7 +167,6 @@ namespace b3::protocol::sbe
                 TradeBust_57,
                 SnapshotFullRefresh_Orders_MBO_71
         > body;
-        uint64_t created_time_tv;
     };
 
     struct message
@@ -175,8 +174,8 @@ namespace b3::protocol::sbe
         b3_header header;
         std::shared_ptr<sbe_message> current_sbe_msg = nullptr;
 
-        message(char* __buffer, size_t __size, uint64_t create_time) : header(__buffer, 0, __size),
-        _data(__buffer),
+        message(char* __buffer, size_t __size, uint64_t ct) : header(__buffer, 0, __size),
+        _data(__buffer), created_time(ct),
         data_size(__size) {
             offset += header.encoded_lenght();
             _get_next_message();
@@ -198,11 +197,6 @@ namespace b3::protocol::sbe
         uint64_t get_created_time_nano() const
         {
             return created_time;
-        }
-
-        void set_created_time(uint64_t value)
-        {
-           created_time = value;
         }
 
         bool has_next_sbe_msg()
@@ -248,7 +242,7 @@ namespace b3::protocol::sbe
 
         std::shared_ptr<sbe_message> decoder_sbe_message()
         {
-            auto sbe_msg = std::make_shared<sbe_message>(created_time);
+            auto sbe_msg = std::make_shared<sbe_message>();
             sbe_msg->header = std::make_unique<MessageHeader>();
             sbe_msg->header->wrap(_data, offset, 0, data_size);
             offset += sbe_msg->header->encodedLength();

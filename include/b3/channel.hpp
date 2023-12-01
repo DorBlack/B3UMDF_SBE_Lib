@@ -25,7 +25,6 @@
 #ifndef MARKET_DATA_CHANNEL_HPP
 #define MARKET_DATA_CHANNEL_HPP
 #include <memory>
-#include "types.h"
 #include "channel_config.hpp"
 #include "io/multicast_udp_receiver.h"
 #include "protocol/b3_message.hpp"
@@ -78,7 +77,7 @@ namespace b3::umdf
         };
     public:
         struct channel_notification {
-            std::function<void(const sbe::sbe_message&)> on_incremental;
+            std::function<void(const sbe::sbe_message&, std::uint64_t)> on_incremental;
             std::function<void(const sbe::sbe_message&)> on_snapshot;
             std::function<void(const sbe::sbe_message&)> on_security_def;
         };
@@ -153,7 +152,6 @@ namespace b3::umdf
         void on_instrument_def_msg_received(char *buffer, uint32_t len, uint64_t  created_time_ns)
         {
             auto packet = sbe::message(buffer, len, created_time_ns);
-            packet.set_created_time(created_time_ns);
             auto ret = check_instrument_definition_packet(packet);
             switch(ret) {
                 case CarrouselAction::discard:
@@ -196,7 +194,6 @@ namespace b3::umdf
         void on_snapshot_msg_received(char *__buffer, uint32_t __len, uint64_t  created_time_ns)
         {
             auto packet = sbe::message(__buffer, __len, created_time_ns);
-            packet.set_created_time(created_time_ns);
             auto ret = check_snapshot_packet(packet);
             switch(ret) {
                 case CarrouselAction::discard:
@@ -235,19 +232,15 @@ namespace b3::umdf
             }
         }
 
-        struct timespec _timer;
         void on_incremental_a_msg_received(char* __buffer, uint32_t __len, uint64_t created_time_ns)
         {
             auto packet = sbe::message(__buffer, __len, created_time_ns);
-            packet.set_created_time(created_time_ns);
             auto result = check_incremental_packet(packet);
             switch (result) {
                 case IncrementalAction::send:
                     do
                     {
-                        //        auto msg1 = get_sbe_message<SecurityDefinition_4>(&tmp);
-                        //        std::cout << "send symbol: " << msg1.symbol() << std::endl;
-                        _M_notify->on_incremental(*packet.current_sbe_msg);
+                        _M_notify->on_incremental(*packet.current_sbe_msg, packet.get_created_time_nano());
                     }
                     while(packet.has_next_sbe_msg());
                     break;
@@ -290,7 +283,7 @@ namespace b3::umdf
                                     {
                                         //        auto msg1 = get_sbe_message<SecurityDefinition_4>(&tmp);
                                         //        std::cout << "send symbol: " << msg1.symbol() << std::endl;
-                                        _M_notify->on_incremental(*tmp.current_sbe_msg);
+                                        _M_notify->on_incremental(*tmp.current_sbe_msg, tmp.get_created_time_nano());
                                     }
                                     while(tmp.has_next_sbe_msg());
                                     ++last_seqnum;
@@ -314,7 +307,7 @@ namespace b3::umdf
                             auto tmp = packet;
                             do
                             {
-                                _M_notify->on_incremental(*tmp.current_sbe_msg);
+                                _M_notify->on_incremental(*tmp.current_sbe_msg, tmp.get_created_time_nano());
                             }
                             while(tmp.has_next_sbe_msg());
                             ++last_seqnum;

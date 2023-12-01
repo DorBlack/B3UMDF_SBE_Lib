@@ -23,5 +23,5 @@ else ()
 	target_link_libraries(b3_umdf INTERFACE pcap asio Threads::Threads)
 endif()
 
-add_executable(backtest_sample back_test.cpp)
+add_executable(backtest_sample channel_sample.cpp)
 target_link_libraries(backtest_sample b3_umdf)

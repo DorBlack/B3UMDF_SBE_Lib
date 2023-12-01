@@ -330,7 +330,6 @@ namespace io::network {
                     poll(&_M_pfd, 1, -1);
                     continue;
                 }
-                clock_gettime(CLOCK_MONOTONIC, &_timer);
                 walk_block(pbd);
                 flush_block(pbd);
                 block_num = (block_num + 1) % _M_ring.req.tp_block_nr;
@@ -341,6 +340,7 @@ namespace io::network {
             auto num_pkts = pbd->h1.num_pkts;
             auto ppd = (tpacket3_hdr *) ((uint8_t *) pbd + pbd->h1.offset_to_first_pkt);
 
+
             for (auto i = 0; i < num_pkts; ++i) {
                 filter_and_dispatch_packet(ppd);
                 ppd = (tpacket3_hdr *) ((uint8_t *) ppd + ppd->tp_next_offset);
@@ -349,33 +349,32 @@ namespace io::network {
 
         void filter_and_dispatch_packet(tpacket3_hdr *ppd) {
             constexpr int UDP_PROTOCOL = 17;
-
+            clock_gettime(CLOCK_MONOTONIC, &_timer);
             sockaddr_ll *src_addr = (sockaddr_ll *) ((uint8_t *) ppd + sizeof(tpacket3_hdr));
-
-            if ((src_addr->sll_pkttype == PACKET_OUTGOING  && !_M_loopback) && src_addr->sll_pkttype != PACKET_MULTICAST) {
-                return;
-            }
             auto eth = (eth_hdr *) ((uint8_t *) ppd + ppd->tp_mac);
             auto ip = (ip_hdr *) ((uint8_t *) eth + ETH_HLEN);
             auto udp = (udp_hdr *) ((uint8_t *) ip + sizeof(ip_hdr));
             char *payload = (char *) ((uint8_t *) udp + sizeof(udp_hdr));
 
+            if ((src_addr->sll_pkttype == PACKET_OUTGOING  && !_M_loopback) &&
+                    src_addr->sll_pkttype != PACKET_MULTICAST ||
+                    !(ntohs(eth->h_proto) == ETH_P_IP &&
+                      ip->protocol == UDP_PROTOCOL &&
+                      ip->daddr == _M_group &&
+                      ntohs(udp->dest) == _M_port)
+                    ) {
+                return;
+            }
+
+
             udp_packet packet{.sock_address = src_addr,
                     .eth = eth,
                     .ip = ip,
                     .udp = udp,
-                    .data = payload,
-                    .timestamp_ns = (uint64_t)_timer.tv_nsec};
+                    .data = payload};
+            packet.timestamp_ns = (uint64_t)_timer.tv_nsec;
 
-            if (ntohs(packet.eth->h_proto) == ETH_P_IP &&
-                packet.ip->protocol == UDP_PROTOCOL &&
-                packet.ip->daddr == _M_group &&
-                ntohs(packet.udp->dest) == _M_port) {
-                    _M_output(packet);
-            } else
-            {
-                //std::cout << "discard " << std::endl;
-            }
+            _M_output(packet);
         }
 
         void flush_block(block_desc *pbd) {

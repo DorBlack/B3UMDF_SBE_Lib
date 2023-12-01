@@ -34,18 +34,12 @@ int main(int argc, char** argv)
     struct timespec _timer;
     int index = 0x00;
     double results[3000];
-    double msgs[3000];
-
     auto output = std::make_shared<b3::umdf::channel::channel_notification>();
-
     output->on_security_def = [&](const sbe::sbe_message& __msg) {
     };
-    output->on_incremental = [&](const sbe::sbe_message& __msg) {
-
+    output->on_incremental = [&](const sbe::sbe_message& __msg, uint64_t __timestamp) {
         clock_gettime(CLOCK_MONOTONIC, &_timer);
-        //results[index] = _timer.tv_nsec  - __msg.created_time_tv ;
-        std::cout <<_timer.tv_nsec << " " << __msg.created_time_tv << " " << _timer.tv_nsec - __msg.created_time_tv << std::endl;
-        /*
+        results[index] = _timer.tv_nsec  - __timestamp;
         if(++index == 3000)
         {
             for(int i = 0; i < index; ++i)
@@ -53,13 +47,11 @@ int main(int argc, char** argv)
                 std::cout << i <<","<< results[i] << std::endl;
             }
             index = 0;
-        }*/
+        }
     };
     output->on_snapshot = [&](const sbe::sbe_message& __msg) {
     };
-
     auto config = b3::channel_config();
-
     config.instrument_def.address = "233.252.8.5";
     config.instrument_def.port = 30001;
     config.instrument_def.interface = "enp4s0";
@@ -69,16 +61,13 @@ int main(int argc, char** argv)
     config.feed_a.address = "233.252.8.7";
     config.feed_a.port = 30003;
     config.feed_a.interface = "enp4s0";
-
     auto channel = b3::umdf::channel(config, output);
-
     try
     {
         if(!channel.start())
         {
             std::cout << "error join " << std::endl;
         }
-
         std::cout << "press any key to stop" << std::endl;
         int i = 0;
         std::cin >> i;
@@ -86,6 +75,5 @@ int main(int argc, char** argv)
     {
         std::cout << "alguma expcetion" << std::endl;
     }
-
     return 0;
 }
