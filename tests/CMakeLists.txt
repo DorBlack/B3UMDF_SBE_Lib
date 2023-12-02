@@ -1,25 +1,15 @@
-add_subdirectory("${PROJECT_SOURCE_DIR}/submodules/googletest" "submodules/googletest")
+############### LIB ########################################################
+find_package(Threads REQUIRED)
+add_library(${CMAKE_PROJECT_NAME} INTERFACE)
+target_include_directories(${CMAKE_PROJECT_NAME} INTERFACE ../include)
+target_compile_features(${CMAKE_PROJECT_NAME} INTERFACE  cxx_std_20)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    message("--Debug Build")
+    target_compile_options(${CMAKE_PROJECT_NAME} INTERFACE -fprofile-arcs -ftest-coverage -O0)
+    target_link_libraries(${CMAKE_PROJECT_NAME}  INTERFACE Threads::Threads gcov)
+else ()
+	target_link_libraries(${CMAKE_PROJECT_NAME} INTERFACE Threads::Threads)
+endif()
 
-set_target_properties(gtest PROPERTIES FOLDER extern)
-set_target_properties(gtest_main PROPERTIES FOLDER extern)
-set_target_properties(gmock PROPERTIES FOLDER extern)
-set_target_properties(gmock_main PROPERTIES FOLDER extern)
-
-macro(package_add_test_with_libraries TESTNAME FILES LIBRARIES TEST_WORKING_DIRECTORY)
-    add_executable(${TESTNAME} ${FILES})
-    target_link_libraries(${TESTNAME} gtest gmock gtest_main "${LIBRARIES}")
-    gtest_discover_tests(${TESTNAME}
-        WORKING_DIRECTORY ${TEST_WORKING_DIRECTORY}
-        PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${TEST_WORKING_DIRECTORY}"
-    )
-    target_include_directories(${TESTNAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../auto_gen 
-                                                    ${CMAKE_CURRENT_SOURCE_DIR}/../intelitrader_umdf_sbe
-                                                    ${CMAKE_CURRENT_SOURCE_DIR}/../include)
-    set_target_properties(${TESTNAME} PROPERTIES FOLDER tests)
-
-    
-    target_compile_features(${TESTNAME} PUBLIC cxx_std_20)
-
-endmacro()
-
-set(LIBS_DEPENDS  b3_umdf asio)
+add_executable(backtest_sample channel_sample.cpp)
+target_link_libraries(backtest_sample ${CMAKE_PROJECT_NAME})
