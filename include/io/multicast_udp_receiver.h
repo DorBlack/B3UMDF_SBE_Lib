@@ -22,14 +22,12 @@
 #include <functional>
 
 namespace io::network {
-
     struct udp_hdr {
         std::uint16_t source;
         std::uint16_t dest;
         std::uint16_t len;
         std::uint16_t check;
     };
-
     struct ip_hdr {
 #if defined(__LITTLE_ENDIAN_BITFIELD)
         std::uint8_t    ihl:4,
@@ -50,32 +48,27 @@ namespace io::network {
         std::uint32_t saddr;
         std::uint32_t daddr;
     };
-
     struct eth_hdr {
         static constexpr std::uint16_t eth_len = 6;	/* Octets in one ethernet addr	 */
         unsigned char	h_dest[eth_len];	/* destination eth addr	*/
         unsigned char	h_source[eth_len];	/* source ether addr	*/
         __be16		h_proto;		/* packet type ID field	*/
     };
-
     struct block_desc {
         uint32_t version;
         uint32_t offset_to_priv;
         tpacket_hdr_v1 h1;
     };
-
     struct ring {
         iovec *rd; //readerss descriptos
         uint8_t *map;
         tpacket_req3 req;
     };
-
     struct _socket {
         int packet_version = TPACKET_V3; //packet version
         int fd; //socket file descriptor
         struct sockaddr_ll addr; //struct com para o bind na interface e  protocolo
     };
-
     struct udp_packet {
         sockaddr_ll *sock_address;
         eth_hdr* eth;
@@ -84,11 +77,6 @@ namespace io::network {
         char *data;
         uint64_t timestamp_ns;
     };
-
-    struct __udp_packet {
-
-    };
-
     enum class ErrorCode
     {
         bind_interface_error = 0x01,
