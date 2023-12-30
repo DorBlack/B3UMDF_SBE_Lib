@@ -175,8 +175,11 @@ namespace b3::protocol::sbe
         std::shared_ptr<sbe_message> current_sbe_msg = nullptr;
 
         message(char* __buffer, size_t __size, uint64_t ct) : header(__buffer, 0, __size),
-        _data(__buffer), created_time(ct),
-        data_size(__size) {
+	offset( 0x00),
+        _data(__buffer), 
+data_size(__size),
+	created_time(ct)
+         {
             offset += header.encoded_lenght();
             _get_next_message();
         }

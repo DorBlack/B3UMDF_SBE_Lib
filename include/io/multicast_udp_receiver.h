@@ -14,7 +14,6 @@
 #include<netdb.h>
 //============ C++ ================//
 #include <system_error>
-#include <exception>
 #include <string>
 #include <cstring>
 #include <iostream>
@@ -284,7 +283,7 @@ namespace io::network {
                 return;
             }
             _M_ring.rd = static_cast<iovec *>(malloc(_M_ring.req.tp_block_nr * sizeof(*_M_ring.rd)));
-            for (auto i = 0; i < _M_ring.req.tp_block_nr; ++i) {
+            for (unsigned int i = 0; i < _M_ring.req.tp_block_nr; ++i) {
                 _M_ring.rd[i].iov_base = _M_ring.map + (i * _M_ring.req.tp_block_size);
                 _M_ring.rd[i].iov_len = _M_ring.req.tp_block_size;
             }
@@ -298,10 +297,9 @@ namespace io::network {
         }
 
         void update_statistics() {
-            int err;
             tpacket_stats_v3 stats;
             socklen_t len = sizeof(stats);
-            err = getsockopt(_M_sock.fd, SOL_PACKET, PACKET_STATISTICS, &stats, &len);
+            getsockopt(_M_sock.fd, SOL_PACKET, PACKET_STATISTICS, &stats, &len);
             printf("\nReceived %u packets,  %u dropped, freeze_q_cnt: %u\n",
                    stats.tp_packets, stats.tp_drops,
                    stats.tp_freeze_q_cnt);
@@ -309,7 +307,6 @@ namespace io::network {
 
         void read_async() {
             block_desc *pbd;
-            int err;
             unsigned int block_num = 0;
 
             while (_M_is_running) {
@@ -329,7 +326,7 @@ namespace io::network {
             auto ppd = (tpacket3_hdr *) ((uint8_t *) pbd + pbd->h1.offset_to_first_pkt);
 
 
-            for (auto i = 0; i < num_pkts; ++i) {
+            for (unsigned int i = 0; i < num_pkts; ++i) {
                 filter_and_dispatch_packet(ppd);
                 ppd = (tpacket3_hdr *) ((uint8_t *) ppd + ppd->tp_next_offset);
             }
@@ -344,8 +341,8 @@ namespace io::network {
             auto udp = (udp_hdr *) ((uint8_t *) ip + sizeof(ip_hdr));
             char *payload = (char *) ((uint8_t *) udp + sizeof(udp_hdr));
 
-            if ((src_addr->sll_pkttype == PACKET_OUTGOING  && !_M_loopback) &&
-                    src_addr->sll_pkttype != PACKET_MULTICAST ||
+            if (((src_addr->sll_pkttype == PACKET_OUTGOING  && !_M_loopback) &&
+                    src_addr->sll_pkttype != PACKET_MULTICAST) ||
                     !(ntohs(eth->h_proto) == ETH_P_IP &&
                       ip->protocol == UDP_PROTOCOL &&
                       ip->daddr == _M_group &&
