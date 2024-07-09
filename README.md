@@ -15,3 +15,4 @@ represents a B3 channel with 3 sockets instrument definition, snapshot and incre
 
 
 ![result in nanoseconds of receiving and processing messages](https://github.com/blogdarkspot/B3UMDF_SBE_Lib/assets/17806113/2f9b2956-b81b-4874-97f7-7c1fb58668d1)
+Result in nanosecods to receiving and processing messages.
