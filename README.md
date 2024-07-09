@@ -1,6 +1,6 @@
 # B3 UMDF Feed SBE
 
-This project is a library with the objective of receiving and processing data sent by B3 through a UDP Multicast channel and delivering it as quickly as possible. For this I used the AF_PACKET socket where it is possible to receive packages directly from the (aaaa)[https://www.linuxjournal.com/content/queueing-linux-network-stack] , another advantage is that it is possible to use a shared memory between the user space and the kernel through a ring buffer where we can receive the packets without the need to make a single systemcall.
+This project is a library with the objective of receiving and processing data sent by B3 through a UDP Multicast channel and delivering it as quickly as possible. For this I used the AF_PACKET socket where it is possible to receive packages directly from the [queueing discipline (QDisc)](https://www.linuxjournal.com/content/queueing-linux-network-stack) , another advantage is that it is possible to use a shared memory between the user space and the kernel through a ring buffer where we can receive the packets without the need to make a single systemcall.
 
 ### include/io/multicast_udp_receiver.h
 This file contains the linux udp multicast socket only it is necessary to enable the CAP_NET_RAW capability to run without sudo.
